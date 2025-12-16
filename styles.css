@@ -207,7 +207,7 @@ body {
 }
 
 /* ========================================
-   Data Panel
+   Data Panel (Expandable)
    ======================================== */
 .data-panel {
     position: absolute;
@@ -215,16 +215,16 @@ body {
     left: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
     background: var(--glass-bg);
     backdrop-filter: blur(12px);
     border-radius: 1rem;
     border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-md);
     z-index: 10;
-    min-width: 160px;
-    transition: opacity 0.3s ease, transform 0.3s ease;
+    min-width: 180px;
+    max-width: 320px;
+    transition: opacity 0.3s ease, transform 0.3s ease, max-height 0.3s ease;
+    overflow: hidden;
 }
 
 .data-panel.hidden {
@@ -233,10 +233,40 @@ body {
     pointer-events: none;
 }
 
+.data-panel.expanded {
+    max-width: 400px;
+}
+
+/* Data Summary Section */
+.data-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+}
+
 .data-item {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
+}
+
+.data-item.clickable {
+    cursor: pointer;
+    padding: 0.375rem 0.5rem;
+    margin: -0.375rem -0.5rem;
+    border-radius: 0.5rem;
+    transition: background-color 0.2s ease;
+}
+
+.data-item.clickable:hover {
+    background: var(--accent-light);
+}
+
+.data-item.clickable .data-label i {
+    font-size: 0.625rem;
+    margin-left: 0.25rem;
+    opacity: 0.6;
 }
 
 .data-label {
@@ -252,6 +282,108 @@ body {
     font-weight: 600;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
+}
+
+/* Panel Toggle Button */
+.panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    cursor: pointer;
+    border-top: 1px solid var(--border-color);
+    transition: background-color 0.2s ease;
+}
+
+.panel-toggle:hover {
+    background: var(--accent-light);
+}
+
+.panel-toggle i {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    transition: transform 0.3s ease;
+}
+
+.data-panel.expanded .panel-toggle i {
+    transform: rotate(180deg);
+}
+
+/* Charts Container */
+.charts-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0 1rem 1rem;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+}
+
+.charts-container.collapsed {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.data-panel.expanded .charts-container {
+    max-height: 500px;
+    opacity: 1;
+    padding: 0 1rem 1rem;
+}
+
+/* Chart Wrapper */
+.chart-wrapper {
+    background: var(--bg-secondary);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+}
+
+.chart-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.chart-body {
+    position: relative;
+    height: 80px;
+    padding: 0.5rem;
+}
+
+.chart-body canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Chart Color Coding (顺序：配速/心率/海拔) */
+.chart-wrapper:nth-child(1) .chart-header {
+    border-left: 3px solid #34d399;
+    /* Pace - Green */
+}
+
+.chart-wrapper:nth-child(2) .chart-header {
+    border-left: 3px solid #f472b6;
+    /* Heart Rate - Pink */
+}
+
+.chart-wrapper:nth-child(3) .chart-header {
+    border-left: 3px solid #60a5fa;
+    /* Altitude - Blue */
 }
 
 /* ========================================
@@ -314,7 +446,7 @@ body {
     background: linear-gradient(90deg, var(--accent-color), var(--track-color));
     border-radius: 4px;
     width: 0%;
-    transition: width 0.1s linear;
+    /* 移除过渡动画以确保及时更新 */
 }
 
 .timeline-handle {
@@ -487,13 +619,27 @@ body {
    Animations
    ======================================== */
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* ========================================
@@ -503,41 +649,41 @@ body {
     .header {
         padding: 0.5rem 1rem;
     }
-    
+
     .logo span {
         display: none;
     }
-    
+
     .upload-box {
         padding: 2rem;
         margin: 1rem;
     }
-    
+
     .data-panel {
         top: 0.5rem;
         left: 0.5rem;
         padding: 0.75rem 1rem;
         min-width: 140px;
     }
-    
+
     .data-value {
         font-size: 1rem;
     }
-    
+
     .player-controls {
         padding: 0.75rem 1rem;
     }
-    
+
     .player-buttons {
         flex-wrap: wrap;
     }
-    
+
     .speed-control {
         margin-left: 0;
         padding-left: 0;
         border-left: none;
     }
-    
+
     .btn-secondary {
         margin-left: 0;
     }

@@ -691,6 +691,13 @@ class Player {
         this.totalSeconds = totalSeconds;
         this.currentSecond = 0;
         this.$totalTime.textContent = this.formatTime(totalSeconds);
+
+        console.log('[Player] setData:', {
+            totalSeconds,
+            indexedPointsLength: indexedPoints.length,
+            formattedTotal: this.formatTime(totalSeconds)
+        });
+
         this.updateUI();
     }
 
@@ -798,15 +805,48 @@ class Player {
 }
 
 // ========================================
-// Data Panel - 数据面板
+// Data Panel - 数据面板（支持展开图表）
 // ========================================
 class DataPanel {
     constructor() {
+        this.$panel = document.getElementById('data-panel');
         this.$time = document.getElementById('data-time');
         this.$distance = document.getElementById('data-distance');
         this.$pace = document.getElementById('data-pace');
         this.$heartrate = document.getElementById('data-heartrate');
         this.$altitude = document.getElementById('data-altitude');
+        this.$toggle = document.getElementById('panel-toggle');
+        this.$chartsContainer = document.getElementById('charts-container');
+
+        this.expanded = false;
+        this.chartManager = null;
+
+        this.setupToggle();
+    }
+
+    setupToggle() {
+        // 点击展开/收起按钮
+        this.$toggle.addEventListener('click', () => this.toggleExpand());
+
+        // 点击可展开的数据项也触发展开
+        document.querySelectorAll('.data-item.clickable').forEach(item => {
+            item.addEventListener('click', () => this.toggleExpand());
+        });
+    }
+
+    toggleExpand() {
+        this.expanded = !this.expanded;
+        this.$panel.classList.toggle('expanded', this.expanded);
+        this.$chartsContainer.classList.toggle('collapsed', !this.expanded);
+
+        // 首次展开时初始化图表
+        if (this.expanded && this.chartManager) {
+            this.chartManager.resize();
+        }
+    }
+
+    setChartManager(chartManager) {
+        this.chartManager = chartManager;
     }
 
     update(point, currentSecond) {
@@ -823,9 +863,9 @@ class DataPanel {
             const pace = 60 / point.speed;
             const paceMin = Math.floor(pace);
             const paceSec = Math.floor((pace - paceMin) * 60);
-            this.$pace.textContent = `${paceMin}'${paceSec.toString().padStart(2, '0')}"`;
+            this.$pace.textContent = `${paceMin}'${paceSec.toString().padStart(2, '0')}" /km`;
         } else {
-            this.$pace.textContent = "--'--\"";
+            this.$pace.textContent = "--'--\" /km";
         }
 
         if (point.heart_rate !== undefined) {
@@ -835,6 +875,11 @@ class DataPanel {
         if (point.altitude !== undefined) {
             this.$altitude.textContent = Math.round(point.altitude) + ' m';
         }
+
+        // 更新图表当前位置指示线
+        if (this.chartManager) {
+            this.chartManager.updateIndicator(currentSecond);
+        }
     }
 
     formatTime(seconds) {
@@ -842,6 +887,219 @@ class DataPanel {
         const mins = Math.floor((seconds % 3600) / 60);
         const secs = Math.floor(seconds % 60);
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    reset() {
+        this.$time.textContent = '00:00:00';
+        this.$distance.textContent = '0.00 km';
+        this.$pace.textContent = "--'--\" /km";
+        this.$heartrate.textContent = '-- bpm';
+        this.$altitude.textContent = '-- m';
+
+        // 收起面板
+        this.expanded = false;
+        this.$panel.classList.remove('expanded');
+        this.$chartsContainer.classList.add('collapsed');
+    }
+}
+
+// ========================================
+// Chart Manager - 图表管理器
+// ========================================
+class ChartManager {
+    constructor() {
+        this.charts = {};
+        this.totalSeconds = 0;
+        this.initialized = false;
+
+        // 图表配色（与 CSS 中颜色编码一致，顺序：配速/心率/海拔）
+        this.colors = {
+            pace: {
+                line: '#34d399',
+                fill: 'rgba(52, 211, 153, 0.2)'
+            },
+            heartrate: {
+                line: '#f472b6',
+                fill: 'rgba(244, 114, 182, 0.2)'
+            },
+            altitude: {
+                line: '#60a5fa',
+                fill: 'rgba(96, 165, 250, 0.2)'
+            }
+        };
+    }
+
+    initCharts(points, totalSeconds) {
+        if (!window.Chart) {
+            console.warn('Chart.js not loaded');
+            return;
+        }
+
+        // 先销毁已有图表
+        this.destroy();
+
+        this.totalSeconds = totalSeconds;
+
+        // 采样数据（减少渲染点数提高性能）
+        const sampleRate = Math.max(1, Math.floor(points.length / 200));
+        const sampledPoints = points.filter((_, i) => i % sampleRate === 0);
+
+        const labels = sampledPoints.map(p => Math.round(p.elapsed_time));
+
+        // 配速数据：速度(km/h) -> 配速(min/km)，速度为0时显示0
+        const paceData = sampledPoints.map(p => {
+            if (p.speed && p.speed > 0) {
+                return 60 / p.speed; // km/h -> min/km
+            }
+            return 0;
+        });
+
+        const heartrateData = sampledPoints.map(p => p.heart_rate || 0);
+        const altitudeData = sampledPoints.map(p => p.altitude || 0);
+
+        // 通用图表配置
+        const commonOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+            },
+            scales: {
+                x: {
+                    display: false,
+                    grid: { display: false }
+                },
+                y: {
+                    display: false,
+                    grid: { display: false }
+                }
+            },
+            elements: {
+                point: { radius: 0 },
+                line: { tension: 0.4, borderWidth: 2 }
+            }
+        };
+
+        // 创建配速图表（顺序：配速 -> 心率 -> 海拔，与数据面板一致）
+        this.createChart('pace-chart', labels, paceData, this.colors.pace, commonOptions);
+
+        // 创建心率图表
+        this.createChart('heartrate-chart', labels, heartrateData, this.colors.heartrate, commonOptions);
+
+        // 创建海拔图表
+        this.createChart('altitude-chart', labels, altitudeData, this.colors.altitude, commonOptions);
+
+        this.initialized = true;
+        console.log('Charts initialized');
+    }
+
+    createChart(canvasId, labels, data, colors, options) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        // 销毁已存在的图表
+        if (this.charts[canvasId]) {
+            this.charts[canvasId].destroy();
+        }
+
+        const ctx = canvas.getContext('2d');
+
+        // 创建渐变填充
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, colors.fill);
+        gradient.addColorStop(1, 'transparent');
+
+        this.charts[canvasId] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    borderColor: colors.line,
+                    backgroundColor: gradient,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    pointBackgroundColor: colors.line,
+                }]
+            },
+            options: options,
+            plugins: [{
+                id: 'verticalIndicator',
+                afterDraw: (chart) => {
+                    if (chart.indicatorX !== undefined && chart.indicatorIndex !== undefined) {
+                        const ctx = chart.ctx;
+                        const chartArea = chart.chartArea;
+                        const meta = chart.getDatasetMeta(0);
+
+                        // 获取主题颜色
+                        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                        const lineColor = isDark ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.6)';
+
+                        ctx.save();
+
+                        // 绘制垂直指示线
+                        ctx.beginPath();
+                        ctx.moveTo(chart.indicatorX, chartArea.top);
+                        ctx.lineTo(chart.indicatorX, chartArea.bottom);
+                        ctx.strokeStyle = lineColor;
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+
+                        // 绘制当前数据点高亮圆点
+                        if (meta.data[chart.indicatorIndex]) {
+                            const point = meta.data[chart.indicatorIndex];
+                            ctx.beginPath();
+                            ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+                            ctx.fillStyle = colors.line;
+                            ctx.fill();
+                            ctx.strokeStyle = isDark ? 'white' : 'white';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+
+                        ctx.restore();
+                    }
+                }
+            }]
+        });
+    }
+
+    updateIndicator(currentSecond) {
+        if (!this.initialized || this.totalSeconds === 0) return;
+
+        // 使用总时间百分比（与播放进度条一致）
+        const percent = Math.max(0, Math.min(1, currentSecond / this.totalSeconds));
+
+        Object.values(this.charts).forEach(chart => {
+            const chartArea = chart.chartArea;
+            const dataLength = chart.data.labels.length;
+
+            if (chartArea && dataLength > 0) {
+                // 直接使用时间百分比计算 X 坐标位置
+                chart.indicatorX = chartArea.left + (chartArea.right - chartArea.left) * percent;
+                // 根据百分比计算对应的数据点索引
+                chart.indicatorIndex = Math.min(Math.floor(percent * dataLength), dataLength - 1);
+                chart.update('none');
+            }
+        });
+    }
+
+    resize() {
+        Object.values(this.charts).forEach(chart => {
+            chart.resize();
+        });
+    }
+
+    destroy() {
+        Object.values(this.charts).forEach(chart => {
+            chart.destroy();
+        });
+        this.charts = {};
+        this.initialized = false;
     }
 }
 
@@ -854,8 +1112,12 @@ class App {
         this.fitParser = new FitParser();
         this.mapRenderer = new MapRenderer('map');
         this.dataPanel = new DataPanel();
+        this.chartManager = new ChartManager();
         this.player = null;
         this.fitData = null;
+
+        // 连接 ChartManager 到 DataPanel
+        this.dataPanel.setChartManager(this.chartManager);
 
         this.init();
     }
@@ -946,6 +1208,11 @@ class App {
         try {
             console.log('Loading FIT file:', file.name);
 
+            // 重置旧数据
+            this.dataPanel.reset();
+            this.chartManager.destroy();
+            this.player.pause();
+
             const arrayBuffer = await file.arrayBuffer();
             this.fitData = await this.fitParser.parse(arrayBuffer);
 
@@ -958,6 +1225,9 @@ class App {
 
             // 绘制轨迹
             this.mapRenderer.drawTrack(this.fitData.points);
+
+            // 初始化图表数据
+            this.chartManager.initCharts(this.fitData.points, this.fitData.totalSeconds);
 
             // 设置播放器数据
             this.player.setData(this.fitData.indexedPoints, this.fitData.totalSeconds);
