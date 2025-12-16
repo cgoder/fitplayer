@@ -7,29 +7,57 @@
     <title>FIT Player - 运动轨迹播放器</title>
     <meta name="description" content="加载 FIT 文件，在地图上动画播放运动轨迹">
 
-    <!-- 高德地图 JS API (从 .apikey 文件动态加载) -->
+    <!-- 高德地图 JS API (支持多种方式加载 API Key) -->
     <script>
         // 动态加载高德地图 API
+        // 支持三种方式设置 API Key（按优先级）：
+        // 1. URL 参数: ?key=YOUR_API_KEY
+        // 2. localStorage: localStorage.setItem('AMAP_API_KEY', 'YOUR_KEY')
+        // 3. .apikey 文件: AMAP_API_KEY=YOUR_KEY
         (async function loadAMapAPI() {
-            try {
-                const response = await fetch('.apikey');
-                const text = await response.text();
-                const match = text.match(/AMAP_API_KEY=(.+)/);
-                if (match && match[1]) {
-                    const apiKey = match[1].trim();
-                    const script = document.createElement('script');
-                    script.src = `https://webapi.amap.com/maps?v=2.0&key=${apiKey}`;
-                    script.onload = () => {
-                        console.log('AMap API loaded successfully');
-                        window.dispatchEvent(new Event('AMapLoaded'));
-                    };
-                    script.onerror = () => console.error('Failed to load AMap API');
-                    document.head.appendChild(script);
-                } else {
-                    console.error('Invalid .apikey file format. Expected: AMAP_API_KEY=your_key');
+            let apiKey = null;
+
+            // 1. 尝试从 URL 参数获取
+            const urlParams = new URLSearchParams(window.location.search);
+            apiKey = urlParams.get('key');
+
+            // 2. 尝试从 localStorage 获取
+            if (!apiKey) {
+                apiKey = localStorage.getItem('AMAP_API_KEY');
+            }
+
+            // 3. 尝试从 .apikey 文件获取
+            if (!apiKey) {
+                try {
+                    const response = await fetch('.apikey');
+                    if (response.ok) {
+                        const text = await response.text();
+                        const match = text.match(/AMAP_API_KEY=(.+)/);
+                        if (match && match[1]) {
+                            apiKey = match[1].trim();
+                        }
+                    }
+                } catch (error) {
+                    console.log('.apikey file not found, trying other methods...');
                 }
-            } catch (error) {
-                console.error('Failed to load .apikey file:', error);
+            }
+
+            // 如果找到 API Key，保存到 localStorage 并加载地图
+            if (apiKey) {
+                localStorage.setItem('AMAP_API_KEY', apiKey);
+                const script = document.createElement('script');
+                script.src = `https://webapi.amap.com/maps?v=2.0&key=${apiKey}`;
+                script.onload = () => {
+                    console.log('AMap API loaded successfully');
+                    window.dispatchEvent(new Event('AMapLoaded'));
+                };
+                script.onerror = () => console.error('Failed to load AMap API');
+                document.head.appendChild(script);
+            } else {
+                console.error('AMap API Key not found. Please set it via:');
+                console.error('1. URL parameter: ?key=YOUR_API_KEY');
+                console.error('2. localStorage: localStorage.setItem("AMAP_API_KEY", "YOUR_KEY")');
+                console.error('3. .apikey file: AMAP_API_KEY=YOUR_KEY');
             }
         })();
     </script>
