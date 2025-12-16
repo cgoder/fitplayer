@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIT Player - 运动轨迹播放器</title>
+    <meta name="description" content="加载 FIT 文件，在地图上动画播放运动轨迹">
+
+    <!-- 高德地图 JS API -->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=YOUR_AMAP_KEY"></script>
+
+    <!-- FIT 文件使用内置原生解析器，无需外部库 -->
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <i class="fas fa-running"></i>
+                    <span>FIT Player</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="theme-toggle" class="btn-icon" title="切换主题">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 地图容器 -->
+            <div class="map-wrapper">
+                <div id="map" class="map-container"></div>
+
+                <!-- 文件上传覆盖层 -->
+                <div id="upload-overlay" class="upload-overlay">
+                    <div class="upload-box">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <h2>上传 FIT 文件</h2>
+                        <p>拖拽文件到此处，或点击选择</p>
+                        <input type="file" id="file-input" accept=".fit" hidden>
+                        <button id="select-file-btn" class="btn-primary">
+                            <i class="fas fa-folder-open"></i>
+                            选择文件
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 地图控制按钮 -->
+                <div class="map-controls">
+                    <button id="zoom-in" class="btn-icon" title="放大">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button id="zoom-out" class="btn-icon" title="缩小">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                    <button id="fit-bounds" class="btn-icon" title="适应轨迹">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </div>
+
+                <!-- 数据面板 -->
+                <div id="data-panel" class="data-panel hidden">
+                    <div class="data-item">
+                        <span class="data-label">时间</span>
+                        <span id="data-time" class="data-value">00:00:00</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">距离</span>
+                        <span id="data-distance" class="data-value">0.00 km</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">配速</span>
+                        <span id="data-pace" class="data-value">--'--"</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">心率</span>
+                        <span id="data-heartrate" class="data-value">-- bpm</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-label">海拔</span>
+                        <span id="data-altitude" class="data-value">-- m</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 播放控制栏 -->
+            <div id="player-controls" class="player-controls hidden">
+                <div class="player-timeline">
+                    <span id="current-time" class="time-display">00:00:00</span>
+                    <div id="timeline" class="timeline">
+                        <div id="timeline-progress" class="timeline-progress"></div>
+                        <div id="timeline-handle" class="timeline-handle"></div>
+                    </div>
+                    <span id="total-time" class="time-display">00:00:00</span>
+                </div>
+
+                <div class="player-buttons">
+                    <button id="btn-begin" class="btn-icon" title="跳转到开始">
+                        <i class="fas fa-step-backward"></i>
+                    </button>
+                    <button id="btn-play" class="btn-icon btn-play" title="播放">
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button id="btn-end" class="btn-icon" title="跳转到结束">
+                        <i class="fas fa-step-forward"></i>
+                    </button>
+
+                    <div class="speed-control">
+                        <label for="speed-select">倍速</label>
+                        <select id="speed-select" class="speed-select">
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="5">5x</option>
+                            <option value="10">10x</option>
+                            <option value="30">30x</option>
+                            <option value="60" selected>60x</option>
+                        </select>
+                    </div>
+
+                    <button id="btn-new-file" class="btn-secondary" title="加载新文件">
+                        <i class="fas fa-file-upload"></i>
+                        新文件
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
