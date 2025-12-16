@@ -7,8 +7,32 @@
     <title>FIT Player - 运动轨迹播放器</title>
     <meta name="description" content="加载 FIT 文件，在地图上动画播放运动轨迹">
 
-    <!-- 高德地图 JS API (请替换为您的 API Key) -->
-    <script src="https://webapi.amap.com/maps?v=2.0&key=AMAP_API_KEY"></script>
+    <!-- 高德地图 JS API (从 .apikey 文件动态加载) -->
+    <script>
+        // 动态加载高德地图 API
+        (async function loadAMapAPI() {
+            try {
+                const response = await fetch('.apikey');
+                const text = await response.text();
+                const match = text.match(/AMAP_API_KEY=(.+)/);
+                if (match && match[1]) {
+                    const apiKey = match[1].trim();
+                    const script = document.createElement('script');
+                    script.src = `https://webapi.amap.com/maps?v=2.0&key=${apiKey}`;
+                    script.onload = () => {
+                        console.log('AMap API loaded successfully');
+                        window.dispatchEvent(new Event('AMapLoaded'));
+                    };
+                    script.onerror = () => console.error('Failed to load AMap API');
+                    document.head.appendChild(script);
+                } else {
+                    console.error('Invalid .apikey file format. Expected: AMAP_API_KEY=your_key');
+                }
+            } catch (error) {
+                console.error('Failed to load .apikey file:', error);
+            }
+        })();
+    </script>
 
     <!-- FIT 文件使用内置原生解析器，无需外部库 -->
 
@@ -163,11 +187,12 @@
                         <label for="speed-select">倍速</label>
                         <select id="speed-select" class="speed-select">
                             <option value="1">1x</option>
-                            <option value="2">2x</option>
-                            <option value="5">5x</option>
                             <option value="10">10x</option>
                             <option value="30">30x</option>
                             <option value="60" selected>60x</option>
+                            <option value="120">120x</option>
+                            <option value="180">180x</option>
+                            <option value="240">240x</option>
                         </select>
                     </div>
 

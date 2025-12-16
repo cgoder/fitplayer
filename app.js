@@ -498,25 +498,42 @@ class MapRenderer {
 
     async init() {
         return new Promise((resolve) => {
-            // 检查高德地图是否加载
-            if (typeof AMap === 'undefined') {
-                console.warn('AMap not loaded, map features will be limited');
+            const initMap = () => {
+                // 检查高德地图是否加载
+                if (typeof AMap === 'undefined') {
+                    console.warn('AMap not loaded, map features will be limited');
+                    resolve();
+                    return;
+                }
+
+                this.map = new AMap.Map(this.containerId, {
+                    zoom: 14,
+                    center: [118.79, 32.06], // 默认南京
+                    mapStyle: 'amap://styles/normal',
+                });
+
+                // 添加地图控件
+                AMap.plugin(['AMap.ToolBar', 'AMap.Scale'], () => {
+                    this.map.addControl(new AMap.Scale());
+                });
+
                 resolve();
-                return;
+            };
+
+            // 如果 AMap 已加载，直接初始化
+            if (typeof AMap !== 'undefined') {
+                initMap();
+            } else {
+                // 否则等待 AMapLoaded 事件
+                window.addEventListener('AMapLoaded', initMap, { once: true });
+                // 设置超时（10秒后放弃等待）
+                setTimeout(() => {
+                    if (typeof AMap === 'undefined') {
+                        console.error('AMap API loading timeout');
+                        resolve();
+                    }
+                }, 10000);
             }
-
-            this.map = new AMap.Map(this.containerId, {
-                zoom: 14,
-                center: [118.79, 32.06], // 默认南京
-                mapStyle: 'amap://styles/normal',
-            });
-
-            // 添加地图控件
-            AMap.plugin(['AMap.ToolBar', 'AMap.Scale'], () => {
-                this.map.addControl(new AMap.Scale());
-            });
-
-            resolve();
         });
     }
 
