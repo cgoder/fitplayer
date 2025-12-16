@@ -7,26 +7,32 @@
     <title>FIT Player - 运动轨迹播放器</title>
     <meta name="description" content="加载 FIT 文件，在地图上动画播放运动轨迹">
 
-    <!-- 高德地图 JS API (支持多种方式加载 API Key) -->
+    <!-- 高德地图 JS API -->
     <script>
-        // 动态加载高德地图 API
-        // 支持三种方式设置 API Key（按优先级）：
-        // 1. URL 参数: ?key=YOUR_API_KEY
-        // 2. localStorage: localStorage.setItem('AMAP_API_KEY', 'YOUR_KEY')
-        // 3. .apikey 文件: AMAP_API_KEY=YOUR_KEY
+        // 加载高德地图 API
+        // 生产环境: 从 Cloudflare Function 获取 Key
+        // 本地开发: 从 .apikey 文件获取 Key
         (async function loadAMapAPI() {
             let apiKey = null;
 
-            // 1. 尝试从 URL 参数获取
+            // 1. 尝试从 URL 参数获取（用于调试）
             const urlParams = new URLSearchParams(window.location.search);
             apiKey = urlParams.get('key');
 
-            // 2. 尝试从 localStorage 获取
+            // 2. 尝试从 Cloudflare Function 获取（生产环境）
             if (!apiKey) {
-                apiKey = localStorage.getItem('AMAP_API_KEY');
+                try {
+                    const response = await fetch('/api/amap-key');
+                    if (response.ok) {
+                        const data = await response.json();
+                        apiKey = data.key;
+                    }
+                } catch (e) {
+                    console.log('Cloudflare Function not available, trying local file...');
+                }
             }
 
-            // 3. 尝试从 .apikey 文件获取
+            // 3. 尝试从 .apikey 文件获取（本地开发）
             if (!apiKey) {
                 try {
                     const response = await fetch('.apikey');
@@ -37,14 +43,12 @@
                             apiKey = match[1].trim();
                         }
                     }
-                } catch (error) {
-                    console.log('.apikey file not found, trying other methods...');
+                } catch (e) {
+                    console.log('.apikey file not found');
                 }
             }
 
-            // 如果找到 API Key，保存到 localStorage 并加载地图
             if (apiKey) {
-                localStorage.setItem('AMAP_API_KEY', apiKey);
                 const script = document.createElement('script');
                 script.src = `https://webapi.amap.com/maps?v=2.0&key=${apiKey}`;
                 script.onload = () => {
@@ -54,10 +58,7 @@
                 script.onerror = () => console.error('Failed to load AMap API');
                 document.head.appendChild(script);
             } else {
-                console.error('AMap API Key not found. Please set it via:');
-                console.error('1. URL parameter: ?key=YOUR_API_KEY');
-                console.error('2. localStorage: localStorage.setItem("AMAP_API_KEY", "YOUR_KEY")');
-                console.error('3. .apikey file: AMAP_API_KEY=YOUR_KEY');
+                console.error('AMap API Key not found');
             }
         })();
     </script>
