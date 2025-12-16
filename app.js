@@ -1,5 +1,5 @@
 /**
- * FIT Player - 运动轨迹播放器
+ * Runback - 运动轨迹回放
  * 基于 comparison_player.js 原型重构
  */
 
