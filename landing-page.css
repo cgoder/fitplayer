@@ -1,0 +1,333 @@
+/* ========================================
+   Landing Page - 完全匹配设计稿V2风格
+   ======================================== */
+
+/* Landing Page Container */
+.landing-page {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    z-index: 1000;
+    background: white;
+}
+
+/* Hide header when landing page is visible */
+.landing-page:not(.hidden)~* .header,
+.app-container:has(.landing-page:not(.hidden)) .header {
+    display: none;
+}
+
+/* ========== 左侧视觉区域 ========== */
+
+.landing-split-left {
+    position: relative;
+    width: 50%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* 渐变背景 - 翡翠绿→青色→靛蓝 */
+.landing-gradient-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #10b981 0%, #06b6d4 50%, #6366f1 100%);
+    background-size: 200% 200%;
+}
+
+/* 3D运动人物图片 */
+.landing-hero-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('assets/runner-hero.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 2;
+}
+
+/* ========== 右侧内容区域 ========== */
+
+.landing-split-right {
+    width: 50%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 4rem 5rem;
+    background: white;
+}
+
+/* 品牌区域 */
+.landing-brand {
+    margin-bottom: 3rem;
+}
+
+.landing-logo {
+    font-size: 4rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 1rem 0;
+    letter-spacing: -0.02em;
+}
+
+.landing-tagline {
+    font-size: 1.25rem;
+    color: #64748b;
+    line-height: 1.6;
+    margin: 0;
+}
+
+/* 功能特性列表 */
+.landing-features-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+}
+
+/* 单个功能卡片 */
+.landing-feature-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+}
+
+.feature-icon {
+    flex-shrink: 0;
+    width: 3.5rem;
+    height: 3.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.1));
+    border-radius: 0.75rem;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.feature-icon i {
+    font-size: 1.75rem;
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.feature-content h3 {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 0.375rem 0;
+}
+
+.feature-content p {
+    font-size: 0.9375rem;
+    color: #64748b;
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* CTA上传区域 */
+.landing-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+/* 上传按钮 - 渐变发光效果 */
+.landing-upload-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1.125rem 3rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: white;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    border: none;
+    border-radius: 3rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3),
+        0 0 40px rgba(6, 182, 212, 0.2);
+}
+
+.landing-upload-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(16, 185, 129, 0.4),
+        0 0 60px rgba(6, 182, 212, 0.3);
+}
+
+.landing-upload-button i {
+    font-size: 1.25rem;
+}
+
+.landing-formats {
+    font-size: 0.875rem;
+    color: #94a3b8;
+    margin: 0;
+    text-align: center;
+    align-self: flex-start;
+    padding-left: 0.5rem;
+}
+
+/* ========================================
+   响应式设计 - 移动优先
+   ======================================== */
+
+/* 平板横屏 (768-1024px) */
+@media (max-width: 1024px) {
+    .landing-split-left {
+        width: 45%;
+    }
+
+    .landing-split-right {
+        width: 55%;
+        padding: 3rem 3.5rem;
+    }
+
+    .landing-logo {
+        font-size: 3.5rem;
+    }
+
+    .landing-tagline {
+        font-size: 1.125rem;
+    }
+
+    .feature-icon {
+        width: 3rem;
+        height: 3rem;
+    }
+
+    .feature-icon i {
+        font-size: 1.5rem;
+    }
+}
+
+/* 平板竖屏/手机横屏 (≤768px) */
+@media (max-width: 768px) {
+    .landing-page {
+        flex-direction: column;
+    }
+
+    .landing-split-left {
+        width: 100%;
+        height: 35%;
+    }
+
+    .landing-split-right {
+        width: 100%;
+        height: 65%;
+        padding: 2.5rem 2rem;
+        overflow-y: auto;
+    }
+
+    .landing-brand {
+        margin-bottom: 2rem;
+    }
+
+    .landing-logo {
+        font-size: 3rem;
+    }
+
+    .landing-tagline {
+        font-size: 1rem;
+    }
+
+    .landing-features-list {
+        gap: 1.25rem;
+        margin-bottom: 2rem;
+    }
+
+    .feature-icon {
+        width: 2.75rem;
+        height: 2.75rem;
+    }
+
+    .feature-icon i {
+        font-size: 1.375rem;
+    }
+
+    .feature-content h3 {
+        font-size: 1rem;
+    }
+
+    .feature-content p {
+        font-size: 0.875rem;
+    }
+
+    .landing-upload-button {
+        padding: 1rem 2.5rem;
+        font-size: 1rem;
+    }
+}
+
+/* 小屏手机 (≤480px) */
+@media (max-width: 480px) {
+    .landing-split-left {
+        height: 30%;
+    }
+
+    .landing-split-right {
+        height: 70%;
+        padding: 2rem 1.5rem;
+    }
+
+    .landing-brand {
+        margin-bottom: 1.5rem;
+    }
+
+    .landing-logo {
+        font-size: 2.5rem;
+    }
+
+    .landing-tagline {
+        font-size: 0.9375rem;
+    }
+
+    .landing-features-list {
+        gap: 1rem;
+    }
+
+    .landing-feature-card {
+        gap: 1rem;
+    }
+
+    .feature-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+    }
+
+    .feature-icon i {
+        font-size: 1.25rem;
+    }
+
+    .feature-content h3 {
+        font-size: 0.9375rem;
+    }
+
+    .feature-content p {
+        font-size: 0.8125rem;
+    }
+
+    .landing-upload-button {
+        padding: 0.875rem 2rem;
+        font-size: 0.9375rem;
+        width: 100%;
+    }
+}
+
+/* Hidden class for page transitions */
+.landing-page.hidden {
+    display: none;
+}

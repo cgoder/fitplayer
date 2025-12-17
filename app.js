@@ -619,8 +619,43 @@ class MapRenderer {
     }
 
     updateMarkerPosition(point) {
-        if (!this.marker || !point) return;
-        this.marker.setPosition([point.lng, point.lat]);
+        // 地图未加载时跳过
+        if (!this.map) {
+            return;
+        }
+
+        // 确保 CoordTransform 和 point.lon/point.lat 可用
+        // 假设 point 包含 wgs84_lng 和 wgs84_lat
+        const gcjPoint = CoordTransform.wgs84ToGcj02(point.wgs84_lng, point.wgs84_lat);
+        const position = [gcjPoint.lng, gcjPoint.lat];
+
+        if (!this.marker) {
+            // 创建标记（第一次）
+            this.marker = new AMap.Marker({
+                position: position,
+                icon: new AMap.Icon({
+                    size: new AMap.Size(32, 32),
+                    image: 'data:image/svg+xml;base64,' + btoa(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+                            <circle cx="16" cy="16" r="8" fill="#3b82f6" stroke="white" stroke-width="3" opacity="0.9"/>
+                            <circle cx="16" cy="16" r="12" fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.3"/>
+                        </svg>
+                    `),
+                    imageSize: new AMap.Size(32, 32),
+                }),
+                offset: new AMap.Pixel(-16, -16),
+                zIndex: 999,
+            });
+            this.map.add(this.marker);
+        } else {
+            // 更新标记位置
+            this.marker.setPosition(position);
+        }
+
+        // 如果启用跟随，移动地图中心 (假设 this.followMarker 存在并被初始化)
+        // if (this.followMarker) {
+        //     this.map.setCenter(position);
+        // }
     }
 
     fitBounds() {
@@ -668,25 +703,48 @@ class Player {
         this.$currentTime = document.getElementById('current-time');
         this.$totalTime = document.getElementById('total-time');
 
+        console.log('[Player] initControls - Elements found:', {
+            btnPlay: !!this.$btnPlay,
+            btnBegin: !!this.$btnBegin,
+            btnEnd: !!this.$btnEnd,
+            speedSelect: !!this.$speedSelect,
+            timeline: !!this.$timeline
+        });
+
         // 事件绑定
-        this.$btnPlay.addEventListener('click', () => this.togglePlay());
-        this.$btnBegin.addEventListener('click', () => this.seekTo(0));
-        this.$btnEnd.addEventListener('click', () => this.seekTo(this.totalSeconds));
-        this.$speedSelect.addEventListener('change', (e) => this.setSpeed(parseInt(e.target.value)));
+        if (this.$btnPlay) {
+            this.$btnPlay.addEventListener('click', () => {
+                console.log('[Player] Play button clicked');
+                this.togglePlay();
+            });
+        }
+        if (this.$btnBegin) {
+            this.$btnBegin.addEventListener('click', () => this.seekTo(0));
+        }
+        if (this.$btnEnd) {
+            this.$btnEnd.addEventListener('click', () => this.seekTo(this.totalSeconds));
+        }
+        if (this.$speedSelect) {
+            this.$speedSelect.addEventListener('change', (e) => this.setSpeed(parseInt(e.target.value)));
+        }
 
         // 时间线点击
-        this.$timeline.addEventListener('click', (e) => {
-            const rect = this.$timeline.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            this.seekTo(Math.floor(percent * this.totalSeconds));
-        });
+        if (this.$timeline) {
+            this.$timeline.addEventListener('click', (e) => {
+                const rect = this.$timeline.getBoundingClientRect();
+                const percent = (e.clientX - rect.left) / rect.width;
+                this.seekTo(Math.floor(percent * this.totalSeconds));
+            });
+        }
 
         // 时间线拖拽
         let isDragging = false;
-        this.$timelineHandle.addEventListener('mousedown', () => {
-            isDragging = true;
-            document.body.style.cursor = 'grabbing';
-        });
+        if (this.$timelineHandle) {
+            this.$timelineHandle.addEventListener('mousedown', () => {
+                isDragging = true;
+                document.body.style.cursor = 'grabbing';
+            });
+        }
 
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
@@ -719,6 +777,13 @@ class Player {
     }
 
     play() {
+        console.log('[Player] play() called', {
+            playing: this.playing,
+            currentSecond: this.currentSecond,
+            totalSeconds: this.totalSeconds,
+            indexedPointsLength: this.indexedPoints?.length
+        });
+
         if (this.playing) return;
 
         // 如果已经播放完毕，从头开始
@@ -728,14 +793,16 @@ class Player {
 
         this.playing = true;
         this.onPlayStateChange(true);
-        this.updatePlayButton();
+        this.$btnPlay.innerHTML = '<i class="fas fa-pause"></i>';
+
+        console.log('[Player] Starting playback interval');
 
         this.interval = setInterval(() => {
-            this.currentSecond += 1;
+            this.currentSecond++;
 
             if (this.currentSecond >= this.totalSeconds) {
-                this.currentSecond = this.totalSeconds;
                 this.pause();
+                return;
             }
 
             this.updateUI();
@@ -744,20 +811,19 @@ class Player {
     }
 
     pause() {
+        console.log('[Player] pause() called');
         if (!this.playing) return;
 
         this.playing = false;
         this.onPlayStateChange(false);
+        clearInterval(this.interval);
+        this.interval = null;
 
-        if (this.interval) {
-            clearInterval(this.interval);
-            this.interval = null;
-        }
-
-        this.updatePlayButton();
+        this.$btnPlay.innerHTML = '<i class="fas fa-play"></i>';
     }
 
     togglePlay() {
+        console.log('[Player] togglePlay() called, current state:', this.playing);
         if (this.playing) {
             this.pause();
         } else {
@@ -1161,24 +1227,20 @@ class App {
         this.mapRenderer = new MapRenderer('map');
         this.dataPanel = new DataPanel();
         this.chartManager = new ChartManager();
-        this.player = null;
         this.fitData = null;
 
         // 连接 ChartManager 到 DataPanel
         this.dataPanel.setChartManager(this.chartManager);
 
-        this.init();
-    }
-
-    async init() {
-        // 初始化地图
-        await this.mapRenderer.init();
-
-        // 初始化播放器
+        // 立即初始化播放器（不等待地图加载）
         this.player = new Player({
             onPositionChange: (point, second) => {
-                this.mapRenderer.updateMarkerPosition(point);
-                this.dataPanel.update(point, second);
+                if (this.mapRenderer) {
+                    this.mapRenderer.updateMarkerPosition(point);
+                }
+                if (this.dataPanel) {
+                    this.dataPanel.update(point, second);
+                }
             },
             onTimeUpdate: (current, total) => {
                 // 可以添加额外的时间更新逻辑
@@ -1187,6 +1249,13 @@ class App {
                 // 可以添加播放状态变化逻辑
             },
         });
+
+        this.init();
+    }
+
+    async init() {
+        // 初始化地图
+        await this.mapRenderer.init();
 
         // 设置文件上传
         this.setupFileUpload();
@@ -1202,40 +1271,53 @@ class App {
 
     setupFileUpload() {
         const uploadOverlay = document.getElementById('upload-overlay');
+
+        // 如果使用新的启动页，跳过旧的上传覆盖层设置
+        if (!uploadOverlay) {
+            console.log('Using landing page for file upload, skipping upload-overlay setup');
+            return;
+        }
+
         const uploadBox = uploadOverlay.querySelector('.upload-box');
         const fileInput = document.getElementById('file-input');
         const selectFileBtn = document.getElementById('select-file-btn');
 
         // 点击选择文件
-        selectFileBtn.addEventListener('click', () => fileInput.click());
+        if (selectFileBtn && fileInput) {
+            selectFileBtn.addEventListener('click', () => fileInput.click());
+        }
 
         // 文件选择变化
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                this.loadFile(e.target.files[0]);
-            }
-        });
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    this.loadFile(e.target.files[0]);
+                }
+            });
+        }
 
         // 拖拽上传
-        uploadOverlay.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadBox.classList.add('drag-over');
-        });
+        if (uploadOverlay && uploadBox) {
+            uploadOverlay.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadBox.classList.add('drag-over');
+            });
 
-        uploadOverlay.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            uploadBox.classList.remove('drag-over');
-        });
+            uploadOverlay.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                uploadBox.classList.remove('drag-over');
+            });
 
-        uploadOverlay.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadBox.classList.remove('drag-over');
+            uploadOverlay.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadBox.classList.remove('drag-over');
 
-            const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].name.endsWith('.fit')) {
-                this.loadFile(files[0]);
-            }
-        });
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].name.endsWith('.fit')) {
+                    this.loadFile(files[0]);
+                }
+            });
+        }
     }
 
     setupMapControls() {
@@ -1256,10 +1338,16 @@ class App {
         try {
             console.log('Loading FIT file:', file.name);
 
-            // 重置旧数据
-            this.dataPanel.reset();
-            this.chartManager.destroy();
-            this.player.pause();
+            // 重置旧数据（添加null检查）
+            if (this.dataPanel) {
+                this.dataPanel.reset();
+            }
+            if (this.chartManager) {
+                this.chartManager.destroy();
+            }
+            if (this.player) {
+                this.player.pause();
+            }
 
             const arrayBuffer = await file.arrayBuffer();
             this.fitData = await this.fitParser.parse(arrayBuffer);
@@ -1271,17 +1359,40 @@ class App {
                 return;
             }
 
-            // 绘制轨迹
-            this.mapRenderer.drawTrack(this.fitData.points);
+            console.log('Points count:', this.fitData.points.length);
+            console.log('Indexed points count:', this.fitData.indexedPoints?.length);
+            console.log('MapRenderer exists:', !!this.mapRenderer);
+            console.log('MapRenderer.map exists:', !!this.mapRenderer?.map);
 
-            // 初始化图表数据
-            this.chartManager.initCharts(this.fitData.points, this.fitData.totalSeconds);
+            // 绘制轨迹（添加null检查）
+            if (this.mapRenderer) {
+                console.log('Drawing track...');
+                this.mapRenderer.drawTrack(this.fitData.points);
+            } else {
+                console.error('MapRenderer is null!');
+            }
 
-            // 设置播放器数据
-            this.player.setData(this.fitData.indexedPoints, this.fitData.totalSeconds);
+            // 初始化图表数据（添加null检查）
+            if (this.chartManager) {
+                this.chartManager.initCharts(this.fitData.points, this.fitData.totalSeconds);
+            }
+
+            // 设置播放器数据（添加null检查）
+            if (this.player) {
+                console.log('[App] About to call player.setData with:', {
+                    indexedPointsLength: this.fitData.indexedPoints?.length,
+                    totalSeconds: this.fitData.totalSeconds,
+                    samplePoint: this.fitData.indexedPoints?.[0]
+                });
+                this.player.setData(this.fitData.indexedPoints, this.fitData.totalSeconds);
+            } else {
+                console.error('[App] Player is null, cannot set data!');
+            }
 
             // 更新初始数据面板
-            this.dataPanel.update(this.fitData.indexedPoints[0], 0);
+            if (this.dataPanel) {
+                this.dataPanel.update(this.fitData.indexedPoints[0], 0);
+            }
 
             // 隐藏上传覆盖层，显示控制面板
             this.hideUploadOverlay();
@@ -1294,18 +1405,54 @@ class App {
     }
 
     hideUploadOverlay() {
-        document.getElementById('upload-overlay').classList.add('hidden');
+        // 隐藏启动页（如果存在）
+        const landingPage = document.getElementById('landing-page');
+        if (landingPage) {
+            landingPage.classList.add('hidden');
+        }
+
+        // 隐藏旧的上传覆盖层（如果存在）
+        const uploadOverlay = document.getElementById('upload-overlay');
+        if (uploadOverlay) {
+            uploadOverlay.classList.add('hidden');
+        }
     }
 
     showUploadOverlay() {
-        document.getElementById('upload-overlay').classList.remove('hidden');
-        document.getElementById('player-controls').classList.add('hidden');
-        document.getElementById('data-panel').classList.add('hidden');
+        // 显示启动页（如果存在）
+        const landingPage = document.getElementById('landing-page');
+        if (landingPage) {
+            landingPage.classList.remove('hidden');
+        }
+
+        // 显示旧的上传覆盖层（如果存在）
+        const uploadOverlay = document.getElementById('upload-overlay');
+        if (uploadOverlay) {
+            uploadOverlay.classList.remove('hidden');
+        }
+
+        // 隐藏控制面板
+        const playerControls = document.getElementById('player-controls');
+        if (playerControls) {
+            playerControls.classList.add('hidden');
+        }
+
+        const dataPanel = document.getElementById('data-panel');
+        if (dataPanel) {
+            dataPanel.classList.add('hidden');
+        }
     }
 
     showControls() {
-        document.getElementById('player-controls').classList.remove('hidden');
-        document.getElementById('data-panel').classList.remove('hidden');
+        const playerControls = document.getElementById('player-controls');
+        if (playerControls) {
+            playerControls.classList.remove('hidden');
+        }
+
+        const dataPanel = document.getElementById('data-panel');
+        if (dataPanel) {
+            dataPanel.classList.remove('hidden');
+        }
     }
 }
 
@@ -1313,5 +1460,65 @@ class App {
 // Initialize App
 // ========================================
 document.addEventListener('DOMContentLoaded', () => {
+    // ========== Landing Page Initialization ==========
+    const landingPage = document.getElementById('landing-page');
+    const landingFileInput = document.getElementById('landing-file-input');
+    const landingUploadBtn = document.getElementById('landing-upload-btn');
+
+    // File upload button click
+    if (landingUploadBtn) {
+        landingUploadBtn.addEventListener('click', () => {
+            landingFileInput.click();
+        });
+    }
+
+    // File selection
+    if (landingFileInput) {
+        landingFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                handleFileUpload(file);
+            }
+        });
+    }
+
+    // Drag and drop support
+    if (landingPage) {
+        landingPage.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            landingPage.style.opacity = '0.8';
+        });
+
+        landingPage.addEventListener('dragleave', () => {
+            landingPage.style.opacity = '1';
+        });
+
+        landingPage.addEventListener('drop', (e) => {
+            e.preventDefault();
+            landingPage.style.opacity = '1';
+
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                handleFileUpload(file);
+            }
+        });
+    }
+
+    // Handle file upload
+    function handleFileUpload(file) {
+        // Hide landing page
+        if (landingPage) {
+            landingPage.classList.add('hidden');
+        }
+
+        // Process file using App instance
+        if (window.app && window.app.loadFile) {
+            window.app.loadFile(file);
+        } else {
+            console.error('App not initialized');
+        }
+    }
+
+    // ========== Existing Initialization ==========
     window.app = new App();
 });

@@ -77,6 +77,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="landing-page.css">
 </head>
 
 <body>
@@ -102,17 +103,72 @@
             <div class="map-wrapper">
                 <div id="map" class="map-container"></div>
 
-                <!-- 文件上传覆盖层 -->
-                <div id="upload-overlay" class="upload-overlay">
-                    <div class="upload-box">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                        <h2>上传 FIT 文件</h2>
-                        <p>拖拽文件到此处，或点击选择</p>
-                        <input type="file" id="file-input" accept=".fit" hidden>
-                        <button id="select-file-btn" class="btn-primary">
-                            <i class="fas fa-folder-open"></i>
-                            选择文件
-                        </button>
+                <!-- Runback 启动页 - 完全匹配设计稿V2 -->
+                <div id="landing-page" class="landing-page">
+                    <!-- 左侧：3D运动人物 + 渐变背景 -->
+                    <div class="landing-split-left">
+                        <div class="landing-gradient-bg"></div>
+                        <div class="landing-hero-image"></div>
+                    </div>
+
+                    <!-- 右侧：品牌内容区 -->
+                    <div class="landing-split-right">
+                        <!-- Logo区域 -->
+                        <div class="landing-brand">
+                            <h1 class="landing-logo">
+                                Runback
+                            </h1>
+                            <p class="landing-tagline">
+                                重温你的运动时刻<br>
+                                Relive Your Running Moments
+                            </p>
+                        </div>
+
+                        <!-- 功能特性卡片 -->
+                        <div class="landing-features-list">
+                            <!-- Feature 1: 路线可视化 -->
+                            <div class="landing-feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-map-marked-alt"></i>
+                                </div>
+                                <div class="feature-content">
+                                    <h3>轨迹回放</h3>
+                                    <p>在地图上动态回放你的运动路线，<br>重现每一步的轨迹</p>
+                                </div>
+                            </div>
+
+                            <!-- Feature 2: 数据分析 -->
+                            <div class="landing-feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-chart-bar"></i>
+                                </div>
+                                <div class="feature-content">
+                                    <h3>数据分析</h3>
+                                    <p>深入分析配速、心率、海拔数据，<br>提升运动表现</p>
+                                </div>
+                            </div>
+
+                            <!-- Feature 3: 实时回放 -->
+                            <div class="landing-feature-card">
+                                <div class="feature-icon">
+                                    <i class="fas fa-play-circle"></i>
+                                </div>
+                                <div class="feature-content">
+                                    <h3>实时回放</h3>
+                                    <p>同步数据和视频，<br>完整重现你的运动过程</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 上传按钮 -->
+                        <div class="landing-cta">
+                            <input type="file" id="landing-file-input" accept=".fit,.gpx,.tcx" hidden>
+                            <button id="landing-upload-btn" class="landing-upload-button">
+                                <span>上传运动数据</span>
+                                <i class="fas fa-arrow-up"></i>
+                            </button>
+                            <p class="landing-formats">支持格式: GPX, TCX, FIT</p>
+                        </div>
                     </div>
                 </div>
 
