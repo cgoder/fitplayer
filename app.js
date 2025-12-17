@@ -963,13 +963,9 @@ class ChartManager {
 
         const labels = sampledPoints.map(p => Math.round(p.elapsed_time));
 
-        // 配速数据：速度(km/h) -> 配速(min/km)，速度为0时显示0
-        const paceData = sampledPoints.map(p => {
-            if (p.speed && p.speed > 0) {
-                return 60 / p.speed; // km/h -> min/km
-            }
-            return 0;
-        });
+        // 配速数据：直接使用速度(km/h)作为图表数据
+        // 速度越快值越大，曲线越高，与心率图表一致
+        const paceData = sampledPoints.map(p => p.speed || 0);
 
         const heartrateData = sampledPoints.map(p => p.heart_rate || 0);
         const altitudeData = sampledPoints.map(p => p.altitude || 0);
@@ -1000,7 +996,7 @@ class ChartManager {
             }
         };
 
-        // 创建配速图表（顺序：配速 -> 心率 -> 海拔，与数据面板一致）
+        // 创建配速图表（使用速度数据，曲线方向与心率一致）
         this.createChart('pace-chart', labels, paceData, this.colors.pace, commonOptions);
 
         // 创建心率图表
@@ -1013,7 +1009,7 @@ class ChartManager {
         console.log('Charts initialized');
     }
 
-    createChart(canvasId, labels, data, colors, options) {
+    createChart(canvasId, labels, data, colors, options, reverseGradient = false) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
 
@@ -1024,10 +1020,17 @@ class ChartManager {
 
         const ctx = canvas.getContext('2d');
 
-        // 创建渐变填充
+        // 创建渐变填充（可反转方向）
         const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        gradient.addColorStop(0, colors.fill);
-        gradient.addColorStop(1, 'transparent');
+        if (reverseGradient) {
+            // 反转渐变：从底部（颜色）到顶部（透明）
+            gradient.addColorStop(0, 'transparent');
+            gradient.addColorStop(1, colors.fill);
+        } else {
+            // 正常渐变：从顶部（颜色）到底部（透明）
+            gradient.addColorStop(0, colors.fill);
+            gradient.addColorStop(1, 'transparent');
+        }
 
         this.charts[canvasId] = new Chart(ctx, {
             type: 'line',
@@ -1037,7 +1040,8 @@ class ChartManager {
                     data: data,
                     borderColor: colors.line,
                     backgroundColor: gradient,
-                    fill: true,
+                    // 反转Y轴时使用 'end' 填充到底部
+                    fill: reverseGradient ? 'end' : true,
                     pointRadius: 0,
                     pointHoverRadius: 4,
                     pointBackgroundColor: colors.line,
