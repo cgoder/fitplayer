@@ -1263,10 +1263,17 @@ class App {
         // 设置地图控制
         this.setupMapControls();
 
-        // 设置新文件按钮
-        document.getElementById('btn-new-file').addEventListener('click', () => {
-            this.showUploadOverlay();
-        });
+        // 设置新文件按钮 - 直接打开文件选择器
+        const btnNewFile = document.getElementById('btn-new-file');
+        const landingFileInput = document.getElementById('landing-file-input');
+
+        if (btnNewFile && landingFileInput) {
+            btnNewFile.addEventListener('click', () => {
+                // 清空input value以允许重新选择同一文件
+                landingFileInput.value = '';
+                landingFileInput.click();
+            });
+        }
     }
 
     setupFileUpload() {
@@ -1468,6 +1475,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // File upload button click
     if (landingUploadBtn) {
         landingUploadBtn.addEventListener('click', () => {
+            // 清空value以允许重选同一文件
+            landingFileInput.value = '';
             landingFileInput.click();
         });
     }
