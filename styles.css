@@ -254,13 +254,14 @@ body {
 
 .data-item {
     display: flex;
-    flex-direction: column;
-    gap: 0.0625rem;
+    flex-direction: row;
+    /* 横向排列：标签 数值 */
+    gap: 0.25rem;
+    /* 标签和数值之间的间距 */
+    align-items: baseline;
+    /* 基线对齐，确保文字底部对齐 */
     min-width: 0;
-    /* 允许收缩 */
 }
-
-
 
 .data-label {
     font-size: 0.5rem;
@@ -830,11 +831,7 @@ body {
         max-width: min(35rem, 50vw) !important;
     }
 
-    .data-summary {
-        flex-direction: column !important;
-        gap: clamp(0.125rem, 0.5vh, 0.25rem);
-    }
-
+    /* data-summary保持默认flex-wrap，让数据项根据宽度自动换行 */
     .charts-container {
         flex-direction: column !important;
         flex-wrap: nowrap !important;
@@ -894,9 +891,9 @@ body {
         max-width: min(28rem, 50vw) !important;
     }
 
+    /* 窄屏时允许数据项换行，不强制纵向 */
     .data-summary {
-        flex-direction: column !important;
-        gap: clamp(0.125rem, 0.5vh, 0.25rem);
+        gap: 0.375rem 0.75rem;
         padding: clamp(0.25rem, 1vh, 0.5rem) clamp(0.5rem, 2vw, 1rem);
     }
 
