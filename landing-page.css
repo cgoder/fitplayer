@@ -68,21 +68,29 @@
 
 /* 品牌区域 */
 .landing-brand {
-    margin-bottom: 3rem;
+    margin-bottom: 2rem;
 }
 
 .landing-logo {
-    font-size: 4rem;
+    font-size: 3.5rem;
     font-weight: 700;
     color: #1e293b;
-    margin: 0 0 1rem 0;
+    margin: 0 0 0.75rem 0;
     letter-spacing: -0.02em;
+    line-height: 1;
 }
 
 .landing-tagline {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     color: #64748b;
-    line-height: 1.6;
+    line-height: 1.5;
+    margin: 0 0 0.25rem 0;
+}
+
+.landing-tagline-en {
+    font-size: 1rem;
+    color: #94a3b8;
+    font-style: italic;
     margin: 0;
 }
 
@@ -90,21 +98,21 @@
 .landing-features-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    margin-bottom: 3rem;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
 }
 
 /* 单个功能卡片 */
 .landing-feature-card {
     display: flex;
     align-items: flex-start;
-    gap: 1.25rem;
+    gap: 1rem;
 }
 
 .feature-icon {
     flex-shrink: 0;
-    width: 3.5rem;
-    height: 3.5rem;
+    width: 3rem;
+    height: 3rem;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -114,7 +122,7 @@
 }
 
 .feature-icon i {
-    font-size: 1.75rem;
+    font-size: 1.5rem;
     background: linear-gradient(135deg, #10b981, #06b6d4);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -122,16 +130,17 @@
 }
 
 .feature-content h3 {
-    font-size: 1.125rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #1e293b;
-    margin: 0 0 0.375rem 0;
+    margin: 0 0 0.25rem 0;
+    line-height: 1.3;
 }
 
 .feature-content p {
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
     color: #64748b;
-    line-height: 1.5;
+    line-height: 1.4;
     margin: 0;
 }
 
@@ -182,53 +191,52 @@
 }
 
 /* ========================================
-   响应式设计 - 移动优先
+   响应式设计 - 优化所有设备和方向
    ======================================== */
 
-/* 平板横屏 (768-1024px) */
-@media (max-width: 1024px) {
+/* 大屏桌面 (>1200px) - 保持50/50分屏 */
+@media (min-width: 1200px) {
+    .landing-split-left {
+        width: 50%;
+    }
+
+    .landing-split-right {
+        width: 50%;
+        padding: 4rem 5rem;
+    }
+}
+
+/* 中等桌面/平板横屏 (900-1200px) */
+@media (min-width: 900px) and (max-width: 1199px) {
     .landing-split-left {
         width: 45%;
     }
 
     .landing-split-right {
         width: 55%;
-        padding: 3rem 3.5rem;
+        padding: 3rem 4rem;
     }
 
     .landing-logo {
         font-size: 3.5rem;
     }
-
-    .landing-tagline {
-        font-size: 1.125rem;
-    }
-
-    .feature-icon {
-        width: 3rem;
-        height: 3rem;
-    }
-
-    .feature-icon i {
-        font-size: 1.5rem;
-    }
 }
 
-/* 平板竖屏/手机横屏 (≤768px) */
-@media (max-width: 768px) {
+/* 平板竖屏 (768-899px, 竖屏) */
+@media (min-width: 768px) and (max-width: 899px) and (orientation: portrait) {
     .landing-page {
         flex-direction: column;
     }
 
     .landing-split-left {
         width: 100%;
-        height: 35%;
+        height: 40%;
     }
 
     .landing-split-right {
         width: 100%;
-        height: 65%;
-        padding: 2.5rem 2rem;
+        height: 60%;
+        padding: 2.5rem 3rem;
         overflow-y: auto;
     }
 
@@ -241,50 +249,103 @@
     }
 
     .landing-tagline {
-        font-size: 1rem;
+        font-size: 1.125rem;
     }
 
     .landing-features-list {
         gap: 1.25rem;
         margin-bottom: 2rem;
     }
-
-    .feature-icon {
-        width: 2.75rem;
-        height: 2.75rem;
-    }
-
-    .feature-icon i {
-        font-size: 1.375rem;
-    }
-
-    .feature-content h3 {
-        font-size: 1rem;
-    }
-
-    .feature-content p {
-        font-size: 0.875rem;
-    }
-
-    .landing-upload-button {
-        padding: 1rem 2.5rem;
-        font-size: 1rem;
-    }
 }
 
-/* 小屏手机 (≤480px) */
-@media (max-width: 480px) {
+/* 手机横屏 (最小高度400px，保持左右分屏) */
+@media (max-width: 899px) and (orientation: landscape) and (min-height: 400px) {
+    .landing-page {
+        flex-direction: row;
+    }
+
     .landing-split-left {
-        height: 30%;
+        width: 45%;
+        height: 100%;
     }
 
     .landing-split-right {
-        height: 70%;
-        padding: 2rem 1.5rem;
+        width: 55%;
+        height: 100%;
+        padding: 1.5rem 2rem;
+        overflow-y: auto;
     }
 
     .landing-brand {
-        margin-bottom: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .landing-logo {
+        font-size: 2rem;
+    }
+
+    .landing-tagline {
+        font-size: 0.875rem;
+    }
+
+    .landing-tagline-en {
+        font-size: 0.8125rem;
+    }
+
+    .landing-features-list {
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .feature-icon {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
+
+    .feature-icon i {
+        font-size: 1.125rem;
+    }
+
+    .feature-content h3 {
+        font-size: 0.875rem;
+    }
+
+    .feature-content p {
+        font-size: 0.75rem;
+        line-height: 1.3;
+    }
+
+    .landing-upload-button {
+        padding: 0.75rem 1.5rem;
+        font-size: 0.875rem;
+    }
+
+    .landing-formats {
+        font-size: 0.75rem;
+    }
+}
+
+/* 手机竖屏 (≤767px, 竖屏) */
+@media (max-width: 767px) and (orientation: portrait) {
+    .landing-page {
+        flex-direction: column;
+    }
+
+    .landing-split-left {
+        width: 100%;
+        height: 40%;
+        min-height: 200px;
+    }
+
+    .landing-split-right {
+        width: 100%;
+        height: 60%;
+        padding: 1.5rem 1.25rem;
+        overflow-y: auto;
+    }
+
+    .landing-brand {
+        margin-bottom: 1.25rem;
     }
 
     .landing-logo {
@@ -292,15 +353,16 @@
     }
 
     .landing-tagline {
+        font-size: 1rem;
+    }
+
+    .landing-tagline-en {
         font-size: 0.9375rem;
     }
 
     .landing-features-list {
-        gap: 1rem;
-    }
-
-    .landing-feature-card {
-        gap: 1rem;
+        gap: 0.875rem;
+        margin-bottom: 1.5rem;
     }
 
     .feature-icon {
@@ -318,12 +380,145 @@
 
     .feature-content p {
         font-size: 0.8125rem;
+        line-height: 1.35;
     }
 
     .landing-upload-button {
+        width: 100%;
         padding: 0.875rem 2rem;
         font-size: 0.9375rem;
-        width: 100%;
+    }
+}
+
+/* 小屏手机竖屏 (≤480px, 竖屏) */
+@media (max-width: 480px) and (orientation: portrait) {
+    .landing-split-left {
+        height: 38%;
+        min-height: 180px;
+    }
+
+    .landing-split-right {
+        height: 62%;
+        padding: 1.25rem 1rem;
+    }
+
+    .landing-brand {
+        margin-bottom: 1rem;
+    }
+
+    .landing-logo {
+        font-size: 2.25rem;
+    }
+
+    .landing-tagline {
+        font-size: 0.9375rem;
+    }
+
+    .landing-tagline-en {
+        font-size: 0.875rem;
+    }
+
+    .landing-features-list {
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .landing-feature-card {
+        gap: 0.875rem;
+    }
+
+    .feature-icon {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
+
+    .feature-icon i {
+        font-size: 1.125rem;
+    }
+
+    .feature-content h3 {
+        font-size: 0.875rem;
+    }
+
+    .feature-content p {
+        font-size: 0.75rem;
+        line-height: 1.3;
+    }
+
+    .landing-upload-button {
+        padding: 0.8125rem 1.5rem;
+        font-size: 0.875rem;
+    }
+
+    .landing-formats {
+        font-size: 0.75rem;
+    }
+}
+
+/* 极小屏横屏 (<400px高度, 横屏) - 特殊处理 */
+@media (max-height: 399px) and (orientation: landscape) {
+    .landing-page {
+        flex-direction: row;
+    }
+
+    .landing-split-left {
+        width: 40%;
+        height: 100%;
+    }
+
+    .landing-split-right {
+        width: 60%;
+        height: 100%;
+        padding: 1.25rem 1.5rem;
+        overflow-y: auto;
+    }
+
+    .landing-brand {
+        margin-bottom: 0.75rem;
+    }
+
+    .landing-logo {
+        font-size: 1.75rem;
+    }
+
+    .landing-tagline {
+        font-size: 0.75rem;
+    }
+
+    .landing-tagline-en {
+        font-size: 0.6875rem;
+    }
+
+    .landing-features-list {
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .feature-icon {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .feature-icon i {
+        font-size: 1rem;
+    }
+
+    .feature-content h3 {
+        font-size: 0.8125rem;
+    }
+
+    .feature-content p {
+        font-size: 0.6875rem;
+        line-height: 1.25;
+    }
+
+    .landing-upload-button {
+        padding: 0.625rem 1.25rem;
+        font-size: 0.8125rem;
+    }
+
+    .landing-formats {
+        font-size: 0.6875rem;
     }
 }
 
