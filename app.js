@@ -829,26 +829,41 @@ class DataPanel {
         this.$panel = document.getElementById('data-panel');
         this.$time = document.getElementById('data-time');
         this.$distance = document.getElementById('data-distance');
-        this.$pace = document.getElementById('data-pace');
-        this.$heartrate = document.getElementById('data-heartrate');
-        this.$altitude = document.getElementById('data-altitude');
         this.$toggle = document.getElementById('panel-toggle');
+        this.$collapseToggle = document.getElementById('panel-collapse-toggle');
         this.$chartsContainer = document.getElementById('charts-container');
 
-        this.expanded = false;
+        // 图表数值显示元素（配速/心率/海拔仅在图表区显示）
+        this.$chartPaceValue = document.getElementById('chart-pace-value');
+        this.$chartHeartrateValue = document.getElementById('chart-heartrate-value');
+        this.$chartAltitudeValue = document.getElementById('chart-altitude-value');
+
+        this.expanded = false;          // 图表区是否展开
+        this.panelCollapsed = false;    // 面板是否折叠
         this.chartManager = null;
 
         this.setupToggle();
     }
 
     setupToggle() {
-        // 点击展开/收起按钮
-        this.$toggle.addEventListener('click', () => this.toggleExpand());
+        // 点击面板折叠按钮
+        this.$collapseToggle.addEventListener('click', () => this.togglePanel());
 
-        // 点击可展开的数据项也触发展开
-        document.querySelectorAll('.data-item.clickable').forEach(item => {
-            item.addEventListener('click', () => this.toggleExpand());
-        });
+        // 点击图表展开/收起按钮
+        this.$toggle.addEventListener('click', () => this.toggleExpand());
+    }
+
+    // 切换面板整体折叠状态
+    togglePanel() {
+        this.panelCollapsed = !this.panelCollapsed;
+        this.$panel.classList.toggle('collapsed', this.panelCollapsed);
+
+        // 展开时恢复默认状态（图表区折叠）
+        if (!this.panelCollapsed) {
+            this.expanded = false;
+            this.$panel.classList.remove('expanded');
+            this.$chartsContainer.classList.add('collapsed');
+        }
     }
 
     toggleExpand() {
@@ -867,30 +882,38 @@ class DataPanel {
     }
 
     update(point, currentSecond) {
-        if (!point) return;
+        // 面板折叠时跳过更新（性能优化）
+        if (this.panelCollapsed || !point) return;
 
+        // 摘要区：时间、距离
         this.$time.textContent = this.formatTime(currentSecond);
 
-        if (point.distance !== undefined) {
-            this.$distance.textContent = point.distance.toFixed(2) + ' km';
-        }
+        const distance = point.distance !== undefined ? point.distance.toFixed(2) : '0.00';
+        this.$distance.innerHTML = `${distance} <span class="data-unit">km</span>`;
 
+        // 图表区：配速（缺失或无效时显示 0）
+        let paceStr = '0';
         if (point.speed !== undefined && point.speed > 0) {
-            // 速度转配速 (min/km)
             const pace = 60 / point.speed;
             const paceMin = Math.floor(pace);
             const paceSec = Math.floor((pace - paceMin) * 60);
-            this.$pace.textContent = `${paceMin}'${paceSec.toString().padStart(2, '0')}" /km`;
-        } else {
-            this.$pace.textContent = "--'--\" /km";
+            paceStr = `${paceMin}'${paceSec.toString().padStart(2, '0')}"`;
+        }
+        if (this.$chartPaceValue) {
+            this.$chartPaceValue.innerHTML = `${paceStr}<span class="chart-unit">/km</span>`;
         }
 
-        if (point.heart_rate !== undefined) {
-            this.$heartrate.textContent = Math.round(point.heart_rate) + ' bpm';
+        // 图表区：心率（缺失时显示 0）
+        if (this.$chartHeartrateValue) {
+            const hr = (point.heart_rate !== undefined && point.heart_rate > 0)
+                ? Math.round(point.heart_rate) : 0;
+            this.$chartHeartrateValue.innerHTML = `${hr}<span class="chart-unit">bpm</span>`;
         }
 
-        if (point.altitude !== undefined) {
-            this.$altitude.textContent = Math.round(point.altitude) + ' m';
+        // 图表区：海拔（缺失时显示 0）
+        if (this.$chartAltitudeValue) {
+            const alt = point.altitude !== undefined ? Math.round(point.altitude) : 0;
+            this.$chartAltitudeValue.innerHTML = `${alt}<span class="chart-unit">m</span>`;
         }
 
         // 更新图表当前位置指示线
@@ -907,15 +930,19 @@ class DataPanel {
     }
 
     reset() {
+        // 摘要区
         this.$time.textContent = '00:00:00';
-        this.$distance.textContent = '0.00 km';
-        this.$pace.textContent = "--'--\" /km";
-        this.$heartrate.textContent = '-- bpm';
-        this.$altitude.textContent = '-- m';
+        this.$distance.innerHTML = '0.00 <span class="data-unit">km</span>';
+
+        // 图表区重置为 0
+        if (this.$chartPaceValue) this.$chartPaceValue.innerHTML = '0<span class="chart-unit">/km</span>';
+        if (this.$chartHeartrateValue) this.$chartHeartrateValue.innerHTML = '0<span class="chart-unit">bpm</span>';
+        if (this.$chartAltitudeValue) this.$chartAltitudeValue.innerHTML = '0<span class="chart-unit">m</span>';
 
         // 收起面板
         this.expanded = false;
-        this.$panel.classList.remove('expanded');
+        this.panelCollapsed = false;
+        this.$panel.classList.remove('expanded', 'collapsed');
         this.$chartsContainer.classList.add('collapsed');
     }
 }

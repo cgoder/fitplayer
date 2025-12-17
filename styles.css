@@ -207,7 +207,7 @@ body {
 }
 
 /* ========================================
-   Data Panel (Expandable) - Max 1/4 Screen
+   Data Panel (Expandable) - Mobile First
    ======================================== */
 .data-panel {
     position: absolute;
@@ -215,17 +215,19 @@ body {
     left: 0.5rem;
     display: flex;
     flex-direction: column;
+    /* 移动优先：纵向布局 */
+    align-items: stretch;
     background: var(--glass-bg);
     backdrop-filter: blur(12px);
     border-radius: 0.75rem;
     border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-md);
     z-index: 10;
-    /* 限制最大宽高为屏幕的50%，面积约为1/4 */
-    max-width: min(280px, 45vw);
-    max-height: 45vh;
-    min-width: 140px;
-    transition: opacity 0.3s ease, transform 0.3s ease, max-width 0.3s ease;
+    /* 移动优先：响应式尺寸，无固定px限制 */
+    max-width: min(20rem, 50vw);
+    max-height: 50vh;
+    min-width: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease, max-width 0.3s ease, max-height 0.3s ease;
     overflow: hidden;
 }
 
@@ -236,19 +238,18 @@ body {
 }
 
 .data-panel.expanded {
-    max-width: min(420px, 55vw);
+    max-width: min(28rem, 50vw);
+    /* 展开时更宽，仍用rem */
     max-height: 50vh;
 }
 
-/* Data Summary Section - Grid布局固定列数 */
+/* Data Summary Section - 灵活布局支持换行 */
 .data-summary {
-    display: grid;
-    /* 固定3列布局，防止波动 */
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.25rem 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
     padding: 0.5rem 0.625rem;
-    overflow-y: auto;
-    max-height: 25vh;
+    align-items: flex-start;
 }
 
 .data-item {
@@ -259,23 +260,7 @@ body {
     /* 允许收缩 */
 }
 
-.data-item.clickable {
-    cursor: pointer;
-    padding: 0.25rem;
-    margin: -0.25rem;
-    border-radius: 0.375rem;
-    transition: background-color 0.2s ease;
-}
 
-.data-item.clickable:hover {
-    background: var(--accent-light);
-}
-
-.data-item.clickable .data-label i {
-    font-size: 0.5rem;
-    margin-left: 0.125rem;
-    opacity: 0.6;
-}
 
 .data-label {
     font-size: 0.5rem;
@@ -296,6 +281,69 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* 数据单位 - 显著缩小 */
+.data-unit {
+    font-size: 0.5rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.125rem;
+}
+
+/* Panel Collapse Toggle - 响应式尺寸，默认居中 */
+.panel-collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: clamp(1.5rem, 4vw, 2rem);
+    height: clamp(1.5rem, 4vw, 2rem);
+    background: transparent;
+    cursor: pointer;
+    border: none;
+    border-radius: 0.5rem;
+    margin: clamp(0.25rem, 1vh, 0.5rem) auto;
+    /* 居中 */
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.panel-collapse-toggle:hover {
+    background: var(--accent-color);
+    color: white;
+}
+
+.panel-collapse-toggle i {
+    font-size: 0.75rem;
+    color: var(--accent-color);
+    transition: color 0.2s ease;
+}
+
+.panel-collapse-toggle:hover i {
+    color: white;
+}
+
+/* Panel Content - 主内容区 */
+.panel-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+    /* 允许收缩 */
+}
+
+/* 面板折叠状态 - 仅显示图标 */
+.data-panel.collapsed .panel-content {
+    display: none;
+}
+
+.data-panel.collapsed {
+    max-width: 44px;
+    min-width: 44px;
+}
+
+.data-panel.collapsed .panel-collapse-toggle {
+    margin: 0.5rem;
 }
 
 /* Panel Toggle Button - 紧凑 */
@@ -323,17 +371,23 @@ body {
     transform: rotate(180deg);
 }
 
-/* Charts Container - 固定3列布局与数据项对应 */
+/* Charts Container - 灵活布局支持换行 */
 .charts-container {
-    display: grid;
-    /* 固定3列，与数据项对应 */
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
     padding: 0 0.5rem 0.5rem;
     max-height: 0;
     opacity: 0;
     overflow: hidden;
     transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
+}
+
+/* 图表卡片 - 弹性宽度 */
+.chart-wrapper {
+    flex: 1 1 calc(33.333% - 0.25rem);
+    min-width: 80px;
+    max-width: 100%;
 }
 
 .charts-container.collapsed {
@@ -344,43 +398,67 @@ body {
 }
 
 .data-panel.expanded .charts-container {
-    /* PC端固定高度 */
-    max-height: 180px;
+    /* 响应式高度，无固定px */
+    max-height: clamp(12rem, 30vh, 20rem);
     opacity: 1;
     padding: 0 0.5rem 0.5rem;
 }
 
 /* Chart Wrapper - 紧凑设计 */
 .chart-wrapper {
+    position: relative;
+    /* 关键：作为 overlay 的定位参照 */
     background: var(--bg-secondary);
     border-radius: 0.375rem;
     overflow: hidden;
     border: 1px solid var(--border-color);
 }
 
-.chart-header {
+/* Chart Overlay - 悬浮在图表上方 */
+.chart-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    padding: 0.125rem 0.375rem;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
+    align-items: flex-start;
+    padding: 0.25rem 0.375rem;
+    pointer-events: none;
+    z-index: 5;
 }
 
 .chart-title {
-    font-size: 0.4375rem;
+    font-size: 0.5rem;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.02em;
     white-space: nowrap;
+    text-shadow: 0 0 3px var(--bg-secondary);
+}
+
+.chart-value {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 3px var(--bg-secondary);
+}
+
+.chart-unit {
+    font-size: 0.375rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.125rem;
+    /* 增加间距 */
 }
 
 .chart-body {
     position: relative;
-    /* 使用视口单位，小屏幕自动缩小 */
-    height: min(45px, 6vh);
-    padding: 0.125rem;
+    /* 使用视口单位，保持合理宽高比 */
+    height: clamp(50px, 12vh, 100px);
+    padding: 0.25rem 0.125rem 0.125rem;
 }
 
 .chart-body canvas {
@@ -389,19 +467,31 @@ body {
 }
 
 /* Chart Color Coding (顺序：配速/心率/海拔) */
-.chart-wrapper:nth-child(1) .chart-header {
+.chart-wrapper:nth-child(1) {
     border-left: 3px solid #34d399;
     /* Pace - Green */
 }
 
-.chart-wrapper:nth-child(2) .chart-header {
+.chart-wrapper:nth-child(2) {
     border-left: 3px solid #f472b6;
     /* Heart Rate - Pink */
 }
 
-.chart-wrapper:nth-child(3) .chart-header {
+.chart-wrapper:nth-child(3) {
     border-left: 3px solid #60a5fa;
     /* Altitude - Blue */
+}
+
+.chart-wrapper:nth-child(1) .chart-title {
+    color: #34d399;
+}
+
+.chart-wrapper:nth-child(2) .chart-title {
+    color: #f472b6;
+}
+
+.chart-wrapper:nth-child(3) .chart-title {
+    color: #60a5fa;
 }
 
 /* ========================================
@@ -673,76 +763,107 @@ body {
     .charts-container {
         grid-template-columns: repeat(3, 1fr);
     }
-
-    .chart-body {
-        height: 100px;
-    }
 }
 
-/* PC 横屏 - 大屏优化 */
-@media (min-width: 1025px) and (orientation: landscape) {
+/* ========================================
+   响应式断点 - 覆盖所有设备和方向
+   ======================================== */
+
+/* 大屏桌面 (>1440px) - 横屏 */
+@media (min-width: 1441px) and (orientation: landscape) {
     .data-panel {
-        max-width: 400px;
+        max-width: min(40rem, 50vw) !important;
     }
 
     .data-panel.expanded {
-        max-width: 700px;
+        max-width: min(60rem, 50vw) !important;
+    }
+}
+
+/* 桌面/笔记本 (1025px-1440px) - 横屏 */
+@media (min-width: 1025px) and (max-width: 1440px) and (orientation: landscape) {
+    .data-panel {
+        max-width: min(35rem, 50vw) !important;
     }
 
-    .data-panel.expanded .charts-container {
-        max-height: 200px;
+    .data-panel.expanded {
+        max-width: min(55rem, 50vw) !important;
+    }
+
+    .chart-body {
+        height: clamp(80px, 12vh, 120px) !important;
+    }
+}
+
+/* 平板横屏 (768px-1024px, landscape) */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+    .data-panel {
+        max-width: min(30rem, 50vw) !important;
+        max-height: 50vh !important;
+    }
+
+    .data-panel.expanded {
+        max-width: min(45rem, 50vw) !important;
     }
 
     .data-summary {
-        grid-template-columns: repeat(5, 1fr);
-        gap: 0.5rem;
+        flex-wrap: wrap !important;
     }
 
     .charts-container {
-        grid-template-columns: repeat(3, 1fr);
+        flex-wrap: wrap !important;
     }
 
     .chart-body {
-        height: 100px;
+        height: clamp(70px, 10vh, 100px) !important;
     }
 }
 
-/* 平板/小屏PC */
-@media (min-width: 769px) and (max-width: 1024px) {
-    .data-panel.expanded {
-        max-width: 550px;
-    }
-
-    .charts-container {
-        grid-template-columns: repeat(3, 1fr);
-    }
-
-    .chart-body {
-        height: 90px;
-    }
-}
-
-/* 移动端横屏 */
-@media (max-width: 768px) and (orientation: landscape) {
+/* 平板竖屏 (768px-1024px, portrait) - 包含iPad Mini */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
     .data-panel {
-        top: 0.5rem;
-        left: 0.5rem;
-        max-width: 280px;
+        max-width: min(25rem, 50vw) !important;
+        max-height: 50vh !important;
     }
 
     .data-panel.expanded {
-        max-width: 480px;
+        max-width: min(35rem, 50vw) !important;
     }
 
     .data-summary {
-        flex-direction: row;
-        flex-wrap: wrap;
+        flex-direction: column !important;
+        gap: clamp(0.125rem, 0.5vh, 0.25rem);
+    }
+
+    .charts-container {
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+    }
+
+    .chart-body {
+        height: clamp(4rem, 10vh, 7rem) !important;
+    }
+}
+
+/* 手机横屏 (≤767px, landscape) */
+@media (max-width: 767px) and (orientation: landscape) {
+    .data-panel {
+        max-width: min(20rem, 50vw) !important;
+        max-height: 50vh !important;
+    }
+
+    .data-panel.expanded {
+        max-width: min(30rem, 50vw) !important;
+    }
+
+    .data-summary {
+        flex-wrap: wrap !important;
         gap: 0.5rem;
-        padding: 0.75rem;
+        padding: 0.5rem 0.75rem;
     }
 
     .data-item {
-        min-width: 70px;
+        min-width: 4.5rem;
     }
 
     .data-value {
@@ -754,19 +875,53 @@ body {
     }
 
     .charts-container {
-        grid-template-columns: repeat(3, 1fr);
+        flex-wrap: wrap !important;
     }
 
     .chart-body {
-        height: 70px;
+        height: clamp(50px, 10vh, 80px) !important;
+    }
+}
+
+/* 手机竖屏 (≤767px, portrait) */
+@media (max-width: 767px) and (orientation: portrait) {
+    .data-panel {
+        max-width: min(20rem, 50vw) !important;
+        max-height: 50vh !important;
     }
 
-    .chart-title {
-        font-size: 0.625rem;
+    .data-panel.expanded {
+        max-width: min(28rem, 50vw) !important;
     }
 
-    .player-controls {
-        padding: 0.5rem 1rem;
+    .data-summary {
+        flex-direction: column !important;
+        gap: clamp(0.125rem, 0.5vh, 0.25rem);
+        padding: clamp(0.25rem, 1vh, 0.5rem) clamp(0.5rem, 2vw, 1rem);
+    }
+
+    .data-item {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .charts-container {
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+        gap: clamp(0.125rem, 0.5vh, 0.375rem) !important;
+    }
+
+    .chart-wrapper {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+    }
+
+    .chart-body {
+        height: clamp(3rem, 8vh, 6rem) !important;
+    }
+
+    .data-panel.expanded .charts-container {
+        max-height: none !important;
     }
 }
 
