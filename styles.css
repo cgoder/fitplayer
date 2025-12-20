@@ -448,6 +448,111 @@ body {
 }
 
 /* ========================================
+   Multi-User Data Panel Styles
+   ======================================== */
+
+/* User Row - each user's summary data */
+.data-user-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.5rem;
+    border-radius: 0.5rem;
+    transition: background 0.2s ease;
+}
+
+.data-user-row:hover {
+    background: var(--accent-light);
+}
+
+/* User Avatar - numbered circle */
+.user-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    min-width: 1.5rem;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: white;
+    box-shadow: var(--shadow-sm);
+}
+
+/* User Data Container */
+.user-data {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.user-name {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* User Stats Row */
+.user-stats {
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+}
+
+.stat-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.125rem;
+}
+
+.stat-value {
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.stat-unit {
+    font-size: 0.5rem;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+/* Chart Values Container - Multi-user values */
+.chart-values {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.125rem 0.375rem;
+}
+
+.chart-values .chart-value {
+    display: inline-flex;
+    align-items: baseline;
+    font-size: 0.625rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.chart-values .chart-value .value {
+    text-align: right;
+}
+
+.chart-values .chart-value .chart-unit {
+    font-size: 0.375rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.0625rem;
+}
+
+/* ========================================
    Player Controls - Floating Card Design
    ======================================== */
 .player-controls {

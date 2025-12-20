@@ -161,12 +161,12 @@
 
                         <!-- 上传按钮 -->
                         <div class="landing-cta">
-                            <input type="file" id="landing-file-input" accept=".fit,.gpx,.tcx" hidden>
+                            <input type="file" id="landing-file-input" accept=".fit,.gpx,.tcx" multiple hidden>
                             <button id="landing-upload-btn" class="landing-upload-button">
                                 <span>上传运动数据</span>
                                 <i class="fas fa-arrow-up"></i>
                             </button>
-                            <p class="landing-formats">支持: GPX, TCX, FIT</p>
+                            <p class="landing-formats">支持: GPX, TCX, FIT（最多4个文件）</p>
                         </div>
                     </div>
                 </div>
@@ -188,17 +188,9 @@
                 <div id="data-panel" class="data-panel hidden">
                     <!-- 面板主内容区（折叠时隐藏） -->
                     <div class="panel-content">
-                        <!-- 数据摘要区（时间、距离） -->
+                        <!-- 数据摘要区（多用户支持） -->
                         <div id="data-summary" class="data-summary">
-                            <div class="data-item">
-                                <span class="data-label">时间</span>
-                                <span id="data-time" class="data-value">00:00:00</span>
-                            </div>
-                            <div class="data-item">
-                                <span class="data-label">距离</span>
-                                <span id="data-distance" class="data-value">0.00 <span
-                                        class="data-unit">km</span></span>
-                            </div>
+                            <!-- 由 JavaScript 动态生成多用户数据行 -->
                         </div>
 
                         <!-- 图表区（展开时显示：配速/心率/海拔） -->
@@ -206,8 +198,9 @@
                             <div class="chart-wrapper">
                                 <div class="chart-overlay">
                                     <span class="chart-title">配速</span>
-                                    <span id="chart-pace-value" class="chart-value">0<span
-                                            class="chart-unit">/km</span></span>
+                                    <div id="chart-pace-values" class="chart-values">
+                                        <!-- 多用户配速值由 JS 动态生成 -->
+                                    </div>
                                 </div>
                                 <div class="chart-body">
                                     <canvas id="pace-chart"></canvas>
@@ -216,8 +209,9 @@
                             <div class="chart-wrapper">
                                 <div class="chart-overlay">
                                     <span class="chart-title">心率</span>
-                                    <span id="chart-heartrate-value" class="chart-value">0<span
-                                            class="chart-unit">bpm</span></span>
+                                    <div id="chart-heartrate-values" class="chart-values">
+                                        <!-- 多用户心率值由 JS 动态生成 -->
+                                    </div>
                                 </div>
                                 <div class="chart-body">
                                     <canvas id="heartrate-chart"></canvas>
@@ -226,8 +220,9 @@
                             <div class="chart-wrapper">
                                 <div class="chart-overlay">
                                     <span class="chart-title">海拔</span>
-                                    <span id="chart-altitude-value" class="chart-value">0<span
-                                            class="chart-unit">m</span></span>
+                                    <div id="chart-altitude-values" class="chart-values">
+                                        <!-- 多用户海拔值由 JS 动态生成 -->
+                                    </div>
                                 </div>
                                 <div class="chart-body">
                                     <canvas id="altitude-chart"></canvas>

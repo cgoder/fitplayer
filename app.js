@@ -71,6 +71,36 @@ const CoordTransform = {
         };
     }
 };
+
+// ========================================
+// 多用户配置 - 支持最多 4 个用户同时对比
+// ========================================
+const MAX_FILES = 4;
+const USER_STYLES = [
+    { color: '#3b82f6', label: '用户 1', avatarBg: '#2563eb', textColor: '#ffffff' }, // 蓝色
+    { color: '#ef4444', label: '用户 2', avatarBg: '#dc2626', textColor: '#ffffff' }, // 红色
+    { color: '#10b981', label: '用户 3', avatarBg: '#059669', textColor: '#ffffff' }, // 绿色
+    { color: '#f59e0b', label: '用户 4', avatarBg: '#d97706', textColor: '#ffffff' }  // 橙色
+];
+
+/**
+ * 生成用户头像 SVG 图标
+ * @param {number} userIndex 用户索引 (0-3)
+ * @param {number} size 图标尺寸
+ * @returns {string} SVG 数据 URL
+ */
+function generateAvatarIcon(userIndex, size = 32) {
+    const style = USER_STYLES[userIndex] || USER_STYLES[0];
+    const label = userIndex + 1;
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+            <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 2}" fill="${style.avatarBg}" stroke="white" stroke-width="2"/>
+            <text x="${size / 2}" y="${size / 2 + 5}" text-anchor="middle" fill="${style.textColor}" font-size="${size * 0.45}" font-weight="bold" font-family="Inter, sans-serif">${label}</text>
+        </svg>
+    `;
+    return 'data:image/svg+xml,' + encodeURIComponent(svg.trim());
+}
+
 // ========================================
 // Theme Manager - 主题管理器
 // ========================================
@@ -483,17 +513,14 @@ class FitParser {
 }
 
 // ========================================
-// Map Renderer - 地图渲染器 (高德地图)
+// Map Renderer - 地图渲染器 (高德地图) - 多用户支持
 // ========================================
 class MapRenderer {
     constructor(containerId) {
         this.containerId = containerId;
         this.map = null;
-        this.polyline = null;
-        this.marker = null;
-        this.startMarker = null;
-        this.endMarker = null;
-        this.points = [];
+        // 多用户支持：存储每个会话的图层元素
+        this.sessions = []; // { polyline, startMarker, endMarker, marker, points }
     }
 
     async init() {
@@ -537,130 +564,144 @@ class MapRenderer {
         });
     }
 
-    drawTrack(points) {
-        if (!this.map || points.length === 0) return;
+    /**
+     * 清除所有会话的地图元素
+     */
+    clearAll() {
+        if (!this.map) return;
 
-        this.points = points;
-
-        // 转换坐标
-        const path = points.map(p => [p.lng, p.lat]);
-
-        // 清除旧的轨迹
-        if (this.polyline) {
-            this.map.remove(this.polyline);
-        }
-
-        // 绘制轨迹线
-        this.polyline = new AMap.Polyline({
-            path: path,
-            strokeColor: '#3b82f6',
-            strokeWeight: 4,
-            strokeOpacity: 0.8,
-            lineJoin: 'round',
-            lineCap: 'round',
+        this.sessions.forEach(session => {
+            if (session.polyline) this.map.remove(session.polyline);
+            if (session.startMarker) this.map.remove(session.startMarker);
+            if (session.endMarker) this.map.remove(session.endMarker);
+            if (session.marker) this.map.remove(session.marker);
         });
-        this.map.add(this.polyline);
+        this.sessions = [];
+    }
 
-        // 添加起点标记
-        if (this.startMarker) this.map.remove(this.startMarker);
-        this.startMarker = new AMap.Marker({
-            position: path[0],
-            icon: new AMap.Icon({
-                size: new AMap.Size(24, 24),
-                image: 'data:image/svg+xml,' + encodeURIComponent(`
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#10b981">
-                        <circle cx="12" cy="12" r="10" stroke="white" stroke-width="2"/>
-                    </svg>
-                `),
-                imageSize: new AMap.Size(24, 24),
-            }),
-            offset: new AMap.Pixel(-12, -12),
+    /**
+     * 绘制多个会话的轨迹
+     * @param {Array} sessionsData - 会话数据数组 [{ points, fileName, ... }, ...]
+     */
+    drawTracks(sessionsData) {
+        if (!this.map) return;
+
+        // 清除旧数据
+        this.clearAll();
+
+        sessionsData.forEach((sessionData, index) => {
+            const points = sessionData.points;
+            if (!points || points.length === 0) return;
+
+            const style = USER_STYLES[index] || USER_STYLES[0];
+            const path = points.map(p => [p.lng, p.lat]);
+
+            // 创建轨迹线
+            const polyline = new AMap.Polyline({
+                path: path,
+                strokeColor: style.color,
+                strokeWeight: 4,
+                strokeOpacity: 0.8,
+                lineJoin: 'round',
+                lineCap: 'round',
+            });
+            this.map.add(polyline);
+
+            // 起点标记（使用用户颜色的小圆点）
+            const startMarker = new AMap.Marker({
+                position: path[0],
+                icon: new AMap.Icon({
+                    size: new AMap.Size(16, 16),
+                    image: 'data:image/svg+xml,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                            <circle cx="8" cy="8" r="6" fill="${style.color}" stroke="white" stroke-width="2"/>
+                        </svg>
+                    `),
+                    imageSize: new AMap.Size(16, 16),
+                }),
+                offset: new AMap.Pixel(-8, -8),
+                zIndex: 50 + index,
+            });
+            this.map.add(startMarker);
+
+            // 终点标记
+            const endMarker = new AMap.Marker({
+                position: path[path.length - 1],
+                icon: new AMap.Icon({
+                    size: new AMap.Size(16, 16),
+                    image: 'data:image/svg+xml,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                            <rect x="2" y="2" width="12" height="12" rx="2" fill="${style.color}" stroke="white" stroke-width="2"/>
+                        </svg>
+                    `),
+                    imageSize: new AMap.Size(16, 16),
+                }),
+                offset: new AMap.Pixel(-8, -8),
+                zIndex: 50 + index,
+            });
+            this.map.add(endMarker);
+
+            // 当前位置标记（带编号的头像）
+            const marker = new AMap.Marker({
+                position: path[0],
+                icon: new AMap.Icon({
+                    size: new AMap.Size(36, 36),
+                    image: generateAvatarIcon(index, 36),
+                    imageSize: new AMap.Size(36, 36),
+                }),
+                offset: new AMap.Pixel(-18, -18),
+                zIndex: 100 + index,
+            });
+            this.map.add(marker);
+
+            // 存储会话信息
+            this.sessions.push({
+                polyline,
+                startMarker,
+                endMarker,
+                marker,
+                points,
+            });
         });
-        this.map.add(this.startMarker);
 
-        // 添加终点标记
-        if (this.endMarker) this.map.remove(this.endMarker);
-        this.endMarker = new AMap.Marker({
-            position: path[path.length - 1],
-            icon: new AMap.Icon({
-                size: new AMap.Size(24, 24),
-                image: 'data:image/svg+xml,' + encodeURIComponent(`
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ef4444">
-                        <circle cx="12" cy="12" r="10" stroke="white" stroke-width="2"/>
-                    </svg>
-                `),
-                imageSize: new AMap.Size(24, 24),
-            }),
-            offset: new AMap.Pixel(-12, -12),
-        });
-        this.map.add(this.endMarker);
-
-        // 添加当前位置标记
-        if (this.marker) this.map.remove(this.marker);
-        this.marker = new AMap.Marker({
-            position: path[0],
-            icon: new AMap.Icon({
-                size: new AMap.Size(32, 32),
-                image: 'data:image/svg+xml,' + encodeURIComponent(`
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-                        <circle cx="16" cy="16" r="12" fill="#3b82f6" stroke="white" stroke-width="3"/>
-                        <circle cx="16" cy="16" r="6" fill="white"/>
-                    </svg>
-                `),
-                imageSize: new AMap.Size(32, 32),
-            }),
-            offset: new AMap.Pixel(-16, -16),
-            zIndex: 100,
-        });
-        this.map.add(this.marker);
-
-        // 适应轨迹范围
+        // 适应所有轨迹范围
         this.fitBounds();
     }
 
+    /**
+     * 更新多个会话的标记位置
+     * @param {Array} pointsArray - 各会话当前点位数组 [point1, point2, ...]
+     */
+    updateMarkerPositions(pointsArray) {
+        if (!this.map) return;
+
+        pointsArray.forEach((point, index) => {
+            const session = this.sessions[index];
+            if (!session || !session.marker || !point) return;
+
+            // 使用已转换的 GCJ-02 坐标
+            const position = [point.lng, point.lat];
+            session.marker.setPosition(position);
+        });
+    }
+
+    /**
+     * 单个会话的兼容方法（向后兼容）
+     */
+    drawTrack(points) {
+        this.drawTracks([{ points }]);
+    }
+
     updateMarkerPosition(point) {
-        // 地图未加载时跳过
-        if (!this.map) {
-            return;
-        }
-
-        // 确保 CoordTransform 和 point.lon/point.lat 可用
-        // 假设 point 包含 wgs84_lng 和 wgs84_lat
-        const gcjPoint = CoordTransform.wgs84ToGcj02(point.wgs84_lng, point.wgs84_lat);
-        const position = [gcjPoint.lng, gcjPoint.lat];
-
-        if (!this.marker) {
-            // 创建标记（第一次）
-            this.marker = new AMap.Marker({
-                position: position,
-                icon: new AMap.Icon({
-                    size: new AMap.Size(32, 32),
-                    image: 'data:image/svg+xml;base64,' + btoa(`
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-                            <circle cx="16" cy="16" r="8" fill="#3b82f6" stroke="white" stroke-width="3" opacity="0.9"/>
-                            <circle cx="16" cy="16" r="12" fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.3"/>
-                        </svg>
-                    `),
-                    imageSize: new AMap.Size(32, 32),
-                }),
-                offset: new AMap.Pixel(-16, -16),
-                zIndex: 999,
-            });
-            this.map.add(this.marker);
-        } else {
-            // 更新标记位置
-            this.marker.setPosition(position);
-        }
-
-        // 如果启用跟随，移动地图中心 (假设 this.followMarker 存在并被初始化)
-        // if (this.followMarker) {
-        //     this.map.setCenter(position);
-        // }
+        this.updateMarkerPositions([point]);
     }
 
     fitBounds() {
-        if (!this.map || !this.polyline) return;
-        this.map.setFitView([this.polyline], false, [50, 50, 50, 50]);
+        if (!this.map || this.sessions.length === 0) return;
+        const polylines = this.sessions.map(s => s.polyline).filter(Boolean);
+        if (polylines.length > 0) {
+            this.map.setFitView(polylines, false, [50, 50, 50, 50]);
+        }
     }
 
     zoomIn() {
@@ -673,7 +714,7 @@ class MapRenderer {
 }
 
 // ========================================
-// Player - 播放控制器
+// Player - 播放控制器 - 多用户支持
 // ========================================
 class Player {
     constructor(options = {}) {
@@ -682,7 +723,8 @@ class Player {
         this.playing = false;
         this.speed = 60;
         this.interval = null;
-        this.indexedPoints = [];
+        // 多用户支持：存储多个会话的索引点
+        this.sessions = []; // [{ indexedPoints, totalSeconds, fileName }, ...]
 
         this.onPositionChange = options.onPositionChange || (() => { });
         this.onTimeUpdate = options.onTimeUpdate || (() => { });
@@ -761,19 +803,31 @@ class Player {
         });
     }
 
-    setData(indexedPoints, totalSeconds) {
-        this.indexedPoints = indexedPoints;
-        this.totalSeconds = totalSeconds;
+    /**
+     * 设置多个会话数据
+     * @param {Array} sessions - 会话数组 [{ indexedPoints, totalSeconds, fileName }, ...]
+     * @param {number} globalTotalSeconds - 全局最大时长
+     */
+    setSessionsData(sessions, globalTotalSeconds) {
+        this.sessions = sessions;
+        this.totalSeconds = globalTotalSeconds;
         this.currentSecond = 0;
-        this.$totalTime.textContent = this.formatTime(totalSeconds);
+        this.$totalTime.textContent = this.formatTime(globalTotalSeconds);
 
-        console.log('[Player] setData:', {
-            totalSeconds,
-            indexedPointsLength: indexedPoints.length,
-            formattedTotal: this.formatTime(totalSeconds)
+        console.log('[Player] setSessionsData:', {
+            sessionsCount: sessions.length,
+            globalTotalSeconds,
+            formattedTotal: this.formatTime(globalTotalSeconds)
         });
 
         this.updateUI();
+    }
+
+    /**
+     * 向后兼容：单会话数据
+     */
+    setData(indexedPoints, totalSeconds) {
+        this.setSessionsData([{ indexedPoints, totalSeconds }], totalSeconds);
     }
 
     play() {
@@ -781,7 +835,7 @@ class Player {
             playing: this.playing,
             currentSecond: this.currentSecond,
             totalSeconds: this.totalSeconds,
-            indexedPointsLength: this.indexedPoints?.length
+            sessionsCount: this.sessions.length
         });
 
         if (this.playing) return;
@@ -868,11 +922,21 @@ class Player {
         }
     }
 
+    /**
+     * 通知位置变化（多用户版本）
+     * 返回每个会话当前时间点的数据
+     * 当会话已结束时，返回 null 以表示数据应显示为 0
+     */
     notifyPositionChange() {
-        const point = this.indexedPoints[this.currentSecond];
-        if (point) {
-            this.onPositionChange(point, this.currentSecond);
-        }
+        const pointsArray = this.sessions.map(session => {
+            // 如果当前时间超过该会话的时长，返回 null（数据显示为 0）
+            if (this.currentSecond >= session.totalSeconds) {
+                return null;
+            }
+            return session.indexedPoints[this.currentSecond] || null;
+        });
+
+        this.onPositionChange(pointsArray, this.currentSecond);
     }
 
     formatTime(seconds) {
@@ -882,40 +946,57 @@ class Player {
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
 
+    /**
+     * 获取所有会话的当前点
+     * 当会话已结束时，返回 null
+     */
+    getCurrentPoints() {
+        return this.sessions.map(session => {
+            // 如果当前时间超过该会话的时长，返回 null
+            if (this.currentSecond >= session.totalSeconds) {
+                return null;
+            }
+            return session.indexedPoints[this.currentSecond] || null;
+        });
+    }
+
+    /**
+     * 向后兼容：获取单个点
+     */
     getCurrentPoint() {
-        return this.indexedPoints[this.currentSecond];
+        const points = this.getCurrentPoints();
+        return points[0] || null;
     }
 }
 
 // ========================================
-// Data Panel - 数据面板（支持展开图表）
+// Data Panel - 数据面板（支持展开图表）- 多用户支持
 // ========================================
 class DataPanel {
     constructor() {
         this.$panel = document.getElementById('data-panel');
-        this.$time = document.getElementById('data-time');
-        this.$distance = document.getElementById('data-distance');
+        this.$summary = document.getElementById('data-summary');
         this.$chartsContainer = document.getElementById('charts-container');
 
-        // 图表数值显示元素（配速/心率/海拔仅在图表区显示）
-        this.$chartPaceValue = document.getElementById('chart-pace-value');
-        this.$chartHeartrateValue = document.getElementById('chart-heartrate-value');
-        this.$chartAltitudeValue = document.getElementById('chart-altitude-value');
+        // 多用户图表数值容器
+        this.$chartPaceValues = document.getElementById('chart-pace-values');
+        this.$chartHeartrateValues = document.getElementById('chart-heartrate-values');
+        this.$chartAltitudeValues = document.getElementById('chart-altitude-values');
 
         this.expanded = false;          // 图表区是否展开
         this.chartManager = null;
+        this.sessions = [];             // 存储会话信息
 
         // 点击摘要区域展开/收起图表
-        const dataSummary = document.querySelector('.data-summary');
-        if (dataSummary) {
-            dataSummary.style.cursor = 'pointer';
-            dataSummary.addEventListener('click', () => this.toggleExpand());
+        if (this.$summary) {
+            this.$summary.style.cursor = 'pointer';
+            this.$summary.addEventListener('click', () => this.toggleExpand());
         }
 
         // 默认展开状态
         this.expanded = true;
-        this.$panel.classList.add('expanded');
-        this.$chartsContainer.classList.remove('collapsed');
+        if (this.$panel) this.$panel.classList.add('expanded');
+        if (this.$chartsContainer) this.$chartsContainer.classList.remove('collapsed');
     }
 
     toggleExpand() {
@@ -933,44 +1014,187 @@ class DataPanel {
         this.chartManager = chartManager;
     }
 
-    update(point, currentSecond) {
-        if (!point) return;
+    /**
+     * 初始化多用户数据摘要区
+     * @param {Array} sessions - 会话数组
+     */
+    initSummaries(sessions) {
+        this.sessions = sessions;
 
-        // 摘要区：时间、距离
-        this.$time.textContent = this.formatTime(currentSecond);
+        if (!this.$summary) return;
 
-        const distance = point.distance !== undefined ? point.distance.toFixed(2) : '0.00';
-        this.$distance.innerHTML = `${distance} <span class="data-unit">km</span>`;
+        // 清空现有内容
+        this.$summary.innerHTML = '';
 
-        // 图表区：配速（缺失或无效时显示 0）
-        let paceStr = '0';
-        if (point.speed !== undefined && point.speed > 0) {
-            const pace = 60 / point.speed;
-            const paceMin = Math.floor(pace);
-            const paceSec = Math.floor((pace - paceMin) * 60);
-            paceStr = `${paceMin}'${paceSec.toString().padStart(2, '0')}"`;
-        }
-        if (this.$chartPaceValue) {
-            this.$chartPaceValue.innerHTML = `${paceStr}<span class="chart-unit">/km</span>`;
-        }
+        sessions.forEach((session, index) => {
+            const style = USER_STYLES[index] || USER_STYLES[0];
+            const fileName = session.fileName || `用户 ${index + 1}`;
 
-        // 图表区：心率（缺失时显示 0）
-        if (this.$chartHeartrateValue) {
-            const hr = (point.heart_rate !== undefined && point.heart_rate > 0)
-                ? Math.round(point.heart_rate) : 0;
-            this.$chartHeartrateValue.innerHTML = `${hr}<span class="chart-unit">bpm</span>`;
-        }
+            // 创建用户行
+            const row = document.createElement('div');
+            row.className = 'data-user-row';
+            row.dataset.userIndex = index;
 
-        // 图表区：海拔（缺失时显示 0）
-        if (this.$chartAltitudeValue) {
-            const alt = point.altitude !== undefined ? Math.round(point.altitude) : 0;
-            this.$chartAltitudeValue.innerHTML = `${alt}<span class="chart-unit">m</span>`;
-        }
+            row.innerHTML = `
+                <div class="user-avatar" style="background-color: ${style.avatarBg}">
+                    ${index + 1}
+                </div>
+                <div class="user-data">
+                    <span class="user-name" title="${fileName}">${this.truncateFileName(fileName)}</span>
+                    <div class="user-stats">
+                        <span class="stat-item">
+                            <span class="stat-value" data-field="time">00:00:00</span>
+                        </span>
+                        <span class="stat-item">
+                            <span class="stat-value" data-field="distance">0.00</span>
+                            <span class="stat-unit">km</span>
+                        </span>
+                    </div>
+                </div>
+            `;
+
+            this.$summary.appendChild(row);
+        });
+
+        // 初始化图表值显示区
+        this.initChartValues(sessions);
+    }
+
+    /**
+     * 初始化图表值显示（多用户）
+     */
+    initChartValues(sessions) {
+        const containers = [
+            { el: this.$chartPaceValues, unit: '/km' },
+            { el: this.$chartHeartrateValues, unit: 'bpm' },
+            { el: this.$chartAltitudeValues, unit: 'm' }
+        ];
+
+        containers.forEach(container => {
+            if (!container.el) return;
+            container.el.innerHTML = '';
+
+            sessions.forEach((session, index) => {
+                const style = USER_STYLES[index] || USER_STYLES[0];
+                const span = document.createElement('span');
+                span.className = 'chart-value';
+                span.dataset.userIndex = index;
+                span.style.color = style.color;
+                span.innerHTML = `<span class="value">0</span><span class="chart-unit">${container.unit}</span>`;
+                container.el.appendChild(span);
+            });
+        });
+    }
+
+    /**
+     * 更新多用户数据
+     * @param {Array} pointsArray - 各用户当前点位数组
+     * @param {number} currentSecond - 当前时间（秒）
+     */
+    updateMultiple(pointsArray, currentSecond) {
+        if (!pointsArray || pointsArray.length === 0) return;
+
+        pointsArray.forEach((point, index) => {
+            this.updateUserRow(index, point, currentSecond);
+            this.updateChartValues(index, point);
+        });
 
         // 更新图表当前位置指示线
         if (this.chartManager) {
             this.chartManager.updateIndicator(currentSecond);
         }
+    }
+
+    /**
+     * 更新单个用户行
+     * 当 point 为 null 时，表示该会话已结束，显示 0
+     */
+    updateUserRow(index, point, currentSecond) {
+        const row = this.$summary?.querySelector(`[data-user-index="${index}"]`);
+        if (!row) return;
+
+        const timeEl = row.querySelector('[data-field="time"]');
+        const distanceEl = row.querySelector('[data-field="distance"]');
+
+        // 如果 point 为 null，表示会话已结束，显示 0
+        if (!point) {
+            if (timeEl) {
+                timeEl.textContent = '00:00:00';
+            }
+            if (distanceEl) {
+                distanceEl.textContent = '0.00';
+            }
+            return;
+        }
+
+        const session = this.sessions[index];
+        const second = session ? Math.min(currentSecond, session.totalSeconds) : currentSecond;
+
+        if (timeEl) {
+            timeEl.textContent = this.formatTime(second);
+        }
+
+        if (distanceEl) {
+            const distance = point.distance !== undefined ? point.distance.toFixed(2) : '0.00';
+            distanceEl.textContent = distance;
+        }
+    }
+
+    /**
+     * 更新图表值显示
+     * 当 point 为 null 时，表示该会话已结束，显示 0
+     */
+    updateChartValues(index, point) {
+        const paceEl = this.$chartPaceValues?.querySelector(`[data-user-index="${index}"] .value`);
+        const hrEl = this.$chartHeartrateValues?.querySelector(`[data-user-index="${index}"] .value`);
+        const altEl = this.$chartAltitudeValues?.querySelector(`[data-user-index="${index}"] .value`);
+
+        // 如果 point 为 null，表示会话已结束，显示 0
+        if (!point) {
+            if (paceEl) paceEl.textContent = '0';
+            if (hrEl) hrEl.textContent = '0';
+            if (altEl) altEl.textContent = '0';
+            return;
+        }
+
+        // 配速
+        if (paceEl) {
+            let paceStr = '0';
+            if (point.speed !== undefined && point.speed > 0) {
+                const pace = 60 / point.speed;
+                const paceMin = Math.floor(pace);
+                const paceSec = Math.floor((pace - paceMin) * 60);
+                paceStr = `${paceMin}'${paceSec.toString().padStart(2, '0')}"`;
+            }
+            paceEl.textContent = paceStr;
+        }
+
+        // 心率
+        if (hrEl) {
+            const hr = (point.heart_rate !== undefined && point.heart_rate > 0)
+                ? Math.round(point.heart_rate) : 0;
+            hrEl.textContent = hr;
+        }
+
+        // 海拔
+        if (altEl) {
+            const alt = point.altitude !== undefined ? Math.round(point.altitude) : 0;
+            altEl.textContent = alt;
+        }
+    }
+
+    /**
+     * 向后兼容：单用户更新
+     */
+    update(point, currentSecond) {
+        this.updateMultiple([point], currentSecond);
+    }
+
+    truncateFileName(name) {
+        if (name.length > 15) {
+            return name.substring(0, 12) + '...';
+        }
+        return name;
     }
 
     formatTime(seconds) {
@@ -981,50 +1205,42 @@ class DataPanel {
     }
 
     reset() {
-        // 摘要区
-        this.$time.textContent = '00:00:00';
-        this.$distance.innerHTML = '0.00 <span class="data-unit">km</span>';
+        // 清空摘要区
+        if (this.$summary) {
+            this.$summary.innerHTML = '';
+        }
 
-        // 图表区重置为 0
-        if (this.$chartPaceValue) this.$chartPaceValue.innerHTML = '0<span class="chart-unit">/km</span>';
-        if (this.$chartHeartrateValue) this.$chartHeartrateValue.innerHTML = '0<span class="chart-unit">bpm</span>';
-        if (this.$chartAltitudeValue) this.$chartAltitudeValue.innerHTML = '0<span class="chart-unit">m</span>';
+        // 清空图表值
+        if (this.$chartPaceValues) this.$chartPaceValues.innerHTML = '';
+        if (this.$chartHeartrateValues) this.$chartHeartrateValues.innerHTML = '';
+        if (this.$chartAltitudeValues) this.$chartAltitudeValues.innerHTML = '';
+
+        this.sessions = [];
 
         // 收起面板
         this.expanded = false;
-        this.panelCollapsed = false;
-        this.$panel.classList.remove('expanded', 'collapsed');
-        this.$chartsContainer.classList.add('collapsed');
+        if (this.$panel) this.$panel.classList.remove('expanded', 'collapsed');
+        if (this.$chartsContainer) this.$chartsContainer.classList.add('collapsed');
     }
 }
 
 // ========================================
-// Chart Manager - 图表管理器
+// Chart Manager - 图表管理器 - 多用户支持
 // ========================================
 class ChartManager {
     constructor() {
         this.charts = {};
         this.totalSeconds = 0;
         this.initialized = false;
-
-        // 图表配色（与 CSS 中颜色编码一致，顺序：配速/心率/海拔）
-        this.colors = {
-            pace: {
-                line: '#34d399',
-                fill: 'rgba(52, 211, 153, 0.2)'
-            },
-            heartrate: {
-                line: '#f472b6',
-                fill: 'rgba(244, 114, 182, 0.2)'
-            },
-            altitude: {
-                line: '#60a5fa',
-                fill: 'rgba(96, 165, 250, 0.2)'
-            }
-        };
+        this.sessionsCount = 0;
     }
 
-    initCharts(points, totalSeconds) {
+    /**
+     * 初始化多用户图表
+     * @param {Array} sessions - 会话数组 [{ points, totalSeconds, ... }, ...]
+     * @param {number} globalTotalSeconds - 全局最大时长
+     */
+    initMultiCharts(sessions, globalTotalSeconds) {
         if (!window.Chart) {
             console.warn('Chart.js not loaded');
             return;
@@ -1033,20 +1249,16 @@ class ChartManager {
         // 先销毁已有图表
         this.destroy();
 
-        this.totalSeconds = totalSeconds;
+        this.totalSeconds = globalTotalSeconds;
+        this.sessionsCount = sessions.length;
 
-        // 采样数据（减少渲染点数提高性能）
-        const sampleRate = Math.max(1, Math.floor(points.length / 200));
-        const sampledPoints = points.filter((_, i) => i % sampleRate === 0);
-
-        const labels = sampledPoints.map(p => Math.round(p.elapsed_time));
-
-        // 配速数据：直接使用速度(km/h)作为图表数据
-        // 速度越快值越大，曲线越高，与心率图表一致
-        const paceData = sampledPoints.map(p => p.speed || 0);
-
-        const heartrateData = sampledPoints.map(p => p.heart_rate || 0);
-        const altitudeData = sampledPoints.map(p => p.altitude || 0);
+        // 创建统一的全局时间标签（基于最大时长）
+        // 采样200个点用于显示
+        const sampleCount = 200;
+        const globalLabels = [];
+        for (let i = 0; i <= sampleCount; i++) {
+            globalLabels.push(Math.round((i / sampleCount) * globalTotalSeconds));
+        }
 
         // 通用图表配置
         const commonOptions = {
@@ -1070,24 +1282,142 @@ class ChartManager {
             },
             elements: {
                 point: { radius: 0 },
-                line: { tension: 0.4, borderWidth: 2 }
+                line: {
+                    tension: 0.4,
+                    borderWidth: 2,
+                    spanGaps: false  // 不连接 null 值之间的间隙
+                }
             }
         };
 
-        // 创建配速图表（使用速度数据，曲线方向与心率一致）
-        this.createChart('pace-chart', labels, paceData, this.colors.pace, commonOptions);
+        // 为每类图表准备多用户数据集
+        const paceDatasets = [];
+        const heartrateDatasets = [];
+        const altitudeDatasets = [];
 
-        // 创建心率图表
-        this.createChart('heartrate-chart', labels, heartrateData, this.colors.heartrate, commonOptions);
+        sessions.forEach((session, index) => {
+            const points = session.points;
+            if (!points || points.length === 0) return;
 
-        // 创建海拔图表
-        this.createChart('altitude-chart', labels, altitudeData, this.colors.altitude, commonOptions);
+            const style = USER_STYLES[index] || USER_STYLES[0];
+            const sessionTotalSeconds = session.totalSeconds;
+
+            // 为该用户创建对齐到全局时间轴的数据点
+            // 超过用户自身时长的部分填充 null
+            const paceData = [];
+            const heartrateData = [];
+            const altitudeData = [];
+
+            globalLabels.forEach(globalSecond => {
+                if (globalSecond > sessionTotalSeconds) {
+                    // 超过该用户的时长，填充 null
+                    paceData.push(null);
+                    heartrateData.push(null);
+                    altitudeData.push(null);
+                } else {
+                    // 找到该时间点对应的数据
+                    // 使用线性插值或最近点
+                    const point = this.findPointAtTime(points, globalSecond);
+                    if (point) {
+                        paceData.push(point.speed || 0);
+                        heartrateData.push(point.heart_rate || 0);
+                        altitudeData.push(point.altitude || 0);
+                    } else {
+                        paceData.push(null);
+                        heartrateData.push(null);
+                        altitudeData.push(null);
+                    }
+                }
+            });
+
+            // 配速数据
+            paceDatasets.push({
+                label: style.label,
+                data: paceData,
+                borderColor: style.color,
+                backgroundColor: 'transparent',
+                fill: false,
+                pointRadius: 0,
+                borderWidth: 2,
+                spanGaps: false,
+            });
+
+            // 心率数据
+            heartrateDatasets.push({
+                label: style.label,
+                data: heartrateData,
+                borderColor: style.color,
+                backgroundColor: 'transparent',
+                fill: false,
+                pointRadius: 0,
+                borderWidth: 2,
+                spanGaps: false,
+            });
+
+            // 海拔数据
+            altitudeDatasets.push({
+                label: style.label,
+                data: altitudeData,
+                borderColor: style.color,
+                backgroundColor: 'transparent',
+                fill: false,
+                pointRadius: 0,
+                borderWidth: 2,
+                spanGaps: false,
+            });
+        });
+
+        // 创建图表
+        this.createMultiChart('pace-chart', globalLabels, paceDatasets, commonOptions);
+        this.createMultiChart('heartrate-chart', globalLabels, heartrateDatasets, commonOptions);
+        this.createMultiChart('altitude-chart', globalLabels, altitudeDatasets, commonOptions);
 
         this.initialized = true;
-        console.log('Charts initialized');
+        console.log('Multi-user charts initialized with', sessions.length, 'sessions, globalTotalSeconds:', globalTotalSeconds);
     }
 
-    createChart(canvasId, labels, data, colors, options, reverseGradient = false) {
+    /**
+     * 根据时间查找最近的数据点
+     * @param {Array} points - 数据点数组
+     * @param {number} targetSecond - 目标时间（秒）
+     * @returns {Object|null} - 找到的数据点
+     */
+    findPointAtTime(points, targetSecond) {
+        if (!points || points.length === 0) return null;
+
+        // 二分查找最接近的点
+        let left = 0;
+        let right = points.length - 1;
+
+        while (left < right) {
+            const mid = Math.floor((left + right) / 2);
+            if (points[mid].elapsed_time < targetSecond) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+
+        // 检查左边的点是否更接近
+        if (left > 0) {
+            const leftDiff = Math.abs(points[left - 1].elapsed_time - targetSecond);
+            const rightDiff = Math.abs(points[left].elapsed_time - targetSecond);
+            if (leftDiff < rightDiff) {
+                return points[left - 1];
+            }
+        }
+
+        return points[left];
+    }
+
+    /**
+     * 向后兼容：单会话图表
+     */
+    initCharts(points, totalSeconds) {
+        this.initMultiCharts([{ points, totalSeconds }], totalSeconds);
+    }
+
+    createMultiChart(canvasId, labels, datasets, options) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
 
@@ -1098,32 +1428,11 @@ class ChartManager {
 
         const ctx = canvas.getContext('2d');
 
-        // 创建渐变填充（可反转方向）
-        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        if (reverseGradient) {
-            // 反转渐变：从底部（颜色）到顶部（透明）
-            gradient.addColorStop(0, 'transparent');
-            gradient.addColorStop(1, colors.fill);
-        } else {
-            // 正常渐变：从顶部（颜色）到底部（透明）
-            gradient.addColorStop(0, colors.fill);
-            gradient.addColorStop(1, 'transparent');
-        }
-
         this.charts[canvasId] = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
-                datasets: [{
-                    data: data,
-                    borderColor: colors.line,
-                    backgroundColor: gradient,
-                    // 反转Y轴时使用 'end' 填充到底部
-                    fill: reverseGradient ? 'end' : true,
-                    pointRadius: 0,
-                    pointHoverRadius: 4,
-                    pointBackgroundColor: colors.line,
-                }]
+                datasets: datasets
             },
             options: options,
             plugins: [{
@@ -1132,7 +1441,6 @@ class ChartManager {
                     if (chart.indicatorX !== undefined && chart.indicatorIndex !== undefined) {
                         const ctx = chart.ctx;
                         const chartArea = chart.chartArea;
-                        const meta = chart.getDatasetMeta(0);
 
                         // 获取主题颜色
                         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1148,17 +1456,27 @@ class ChartManager {
                         ctx.lineWidth = 2;
                         ctx.stroke();
 
-                        // 绘制当前数据点高亮圆点
-                        if (meta.data[chart.indicatorIndex]) {
-                            const point = meta.data[chart.indicatorIndex];
-                            ctx.beginPath();
-                            ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-                            ctx.fillStyle = colors.line;
-                            ctx.fill();
-                            ctx.strokeStyle = isDark ? 'white' : 'white';
-                            ctx.lineWidth = 2;
-                            ctx.stroke();
-                        }
+                        // 为每个数据集绘制高亮圆点
+                        chart.data.datasets.forEach((dataset, datasetIndex) => {
+                            // 检查该位置的数据是否为 null（会话已结束）
+                            const dataValue = dataset.data[chart.indicatorIndex];
+                            if (dataValue === null || dataValue === undefined) {
+                                // 会话已结束，不绘制圆点
+                                return;
+                            }
+
+                            const meta = chart.getDatasetMeta(datasetIndex);
+                            if (meta.data[chart.indicatorIndex]) {
+                                const point = meta.data[chart.indicatorIndex];
+                                ctx.beginPath();
+                                ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+                                ctx.fillStyle = dataset.borderColor;
+                                ctx.fill();
+                                ctx.strokeStyle = 'white';
+                                ctx.lineWidth = 2;
+                                ctx.stroke();
+                            }
+                        });
 
                         ctx.restore();
                     }
@@ -1203,7 +1521,7 @@ class ChartManager {
 }
 
 // ========================================
-// App - 主应用
+// App - 主应用 - 多用户支持
 // ========================================
 class App {
     constructor() {
@@ -1212,19 +1530,22 @@ class App {
         this.mapRenderer = new MapRenderer('map');
         this.dataPanel = new DataPanel();
         this.chartManager = new ChartManager();
-        this.fitData = null;
+
+        // 多用户支持：存储会话数组
+        this.sessions = [];
 
         // 连接 ChartManager 到 DataPanel
         this.dataPanel.setChartManager(this.chartManager);
 
         // 立即初始化播放器（不等待地图加载）
         this.player = new Player({
-            onPositionChange: (point, second) => {
+            onPositionChange: (pointsArray, second) => {
+                // 多用户版本：pointsArray 是各用户当前点位数组
                 if (this.mapRenderer) {
-                    this.mapRenderer.updateMarkerPosition(point);
+                    this.mapRenderer.updateMarkerPositions(pointsArray);
                 }
                 if (this.dataPanel) {
-                    this.dataPanel.update(point, second);
+                    this.dataPanel.updateMultiple(pointsArray, second);
                 }
             },
             onTimeUpdate: (current, total) => {
@@ -1283,7 +1604,7 @@ class App {
         if (fileInput) {
             fileInput.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
-                    this.loadFile(e.target.files[0]);
+                    this.loadFiles(Array.from(e.target.files));
                 }
             });
         }
@@ -1304,10 +1625,8 @@ class App {
                 e.preventDefault();
                 uploadBox.classList.remove('drag-over');
 
-                const files = e.dataTransfer.files;
-                if (files.length > 0 && files[0].name.endsWith('.fit')) {
-                    this.loadFile(files[0]);
-                }
+                const files = Array.from(e.dataTransfer.files);
+                this.loadFiles(files);
             });
         }
     }
@@ -1326,11 +1645,25 @@ class App {
         });
     }
 
-    async loadFile(file) {
-        try {
-            console.log('Loading FIT file:', file.name);
+    /**
+     * 加载多个文件（新的多用户入口）
+     * @param {Array<File>} files - 文件列表
+     */
+    async loadFiles(files) {
+        // 验证文件数量
+        if (files.length > MAX_FILES) {
+            alert(`最多支持同时加载 ${MAX_FILES} 个文件，您选择了 ${files.length} 个文件。请减少选择的文件数量。`);
+            return;
+        }
 
-            // 重置旧数据（添加null检查）
+        if (files.length === 0) {
+            return;
+        }
+
+        try {
+            console.log(`Loading ${files.length} file(s)...`);
+
+            // 重置旧数据
             if (this.dataPanel) {
                 this.dataPanel.reset();
             }
@@ -1341,49 +1674,76 @@ class App {
                 this.player.pause();
             }
 
-            const arrayBuffer = await file.arrayBuffer();
-            this.fitData = await this.fitParser.parse(arrayBuffer);
+            // 清空会话
+            this.sessions = [];
 
-            console.log('Parsed FIT data:', this.fitData);
+            // 解析所有文件
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                console.log(`Parsing file ${i + 1}/${files.length}: ${file.name}`);
 
-            if (this.fitData.points.length === 0) {
-                alert('该 FIT 文件没有 GPS 数据');
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const fitData = await this.fitParser.parse(arrayBuffer);
+
+                    if (fitData.points.length === 0) {
+                        console.warn(`File ${file.name} has no GPS data, skipping.`);
+                        continue;
+                    }
+
+                    this.sessions.push({
+                        fileName: file.name,
+                        points: fitData.points,
+                        indexedPoints: fitData.indexedPoints,
+                        totalSeconds: fitData.totalSeconds,
+                        startTime: fitData.startTime,
+                        endTime: fitData.endTime,
+                    });
+                } catch (parseError) {
+                    console.error(`Error parsing file ${file.name}:`, parseError);
+                    // 继续处理其他文件
+                }
+            }
+
+            if (this.sessions.length === 0) {
+                alert('没有找到有效的 GPS 数据');
                 return;
             }
 
-            console.log('Points count:', this.fitData.points.length);
-            console.log('Indexed points count:', this.fitData.indexedPoints?.length);
-            console.log('MapRenderer exists:', !!this.mapRenderer);
-            console.log('MapRenderer.map exists:', !!this.mapRenderer?.map);
+            console.log(`Successfully loaded ${this.sessions.length} session(s)`);
 
-            // 绘制轨迹（添加null检查）
+            // 计算全局最大时长
+            const globalTotalSeconds = Math.max(...this.sessions.map(s => s.totalSeconds));
+
+            // 绘制所有轨迹
             if (this.mapRenderer) {
-                console.log('Drawing track...');
-                this.mapRenderer.drawTrack(this.fitData.points);
-            } else {
-                console.error('MapRenderer is null!');
+                this.mapRenderer.drawTracks(this.sessions);
             }
 
-            // 初始化图表数据（添加null检查）
+            // 初始化多用户图表
             if (this.chartManager) {
-                this.chartManager.initCharts(this.fitData.points, this.fitData.totalSeconds);
+                this.chartManager.initMultiCharts(this.sessions, globalTotalSeconds);
             }
 
-            // 设置播放器数据（添加null检查）
+            // 初始化数据面板
+            if (this.dataPanel) {
+                this.dataPanel.initSummaries(this.sessions);
+            }
+
+            // 设置播放器数据
             if (this.player) {
-                console.log('[App] About to call player.setData with:', {
-                    indexedPointsLength: this.fitData.indexedPoints?.length,
-                    totalSeconds: this.fitData.totalSeconds,
-                    samplePoint: this.fitData.indexedPoints?.[0]
-                });
-                this.player.setData(this.fitData.indexedPoints, this.fitData.totalSeconds);
-            } else {
-                console.error('[App] Player is null, cannot set data!');
+                const playerSessions = this.sessions.map(s => ({
+                    indexedPoints: s.indexedPoints,
+                    totalSeconds: s.totalSeconds,
+                    fileName: s.fileName,
+                }));
+                this.player.setSessionsData(playerSessions, globalTotalSeconds);
             }
 
             // 更新初始数据面板
+            const initialPoints = this.sessions.map(s => s.indexedPoints[0]);
             if (this.dataPanel) {
-                this.dataPanel.update(this.fitData.indexedPoints[0], 0);
+                this.dataPanel.updateMultiple(initialPoints, 0);
             }
 
             // 隐藏上传覆盖层，显示控制面板
@@ -1391,9 +1751,16 @@ class App {
             this.showControls();
 
         } catch (error) {
-            console.error('Error loading FIT file:', error);
-            alert('加载 FIT 文件失败: ' + error.message);
+            console.error('Error loading files:', error);
+            alert('加载文件失败: ' + error.message);
         }
+    }
+
+    /**
+     * 向后兼容：单文件加载
+     */
+    async loadFile(file) {
+        await this.loadFiles([file]);
     }
 
     hideUploadOverlay() {
@@ -1466,17 +1833,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // File selection
+    // File selection (multiple files supported)
     if (landingFileInput) {
         landingFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                handleFileUpload(file);
+            const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                handleFilesUpload(files);
             }
         });
     }
 
-    // Drag and drop support
+    // Drag and drop support (multiple files)
     if (landingPage) {
         landingPage.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -1491,23 +1858,29 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             landingPage.style.opacity = '1';
 
-            const file = e.dataTransfer.files[0];
-            if (file) {
-                handleFileUpload(file);
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) {
+                handleFilesUpload(files);
             }
         });
     }
 
-    // Handle file upload
-    function handleFileUpload(file) {
+    // Handle multiple file upload
+    function handleFilesUpload(files) {
+        // Validate file count
+        if (files.length > MAX_FILES) {
+            alert(`最多支持同时加载 ${MAX_FILES} 个文件，您选择了 ${files.length} 个文件。请减少选择的文件数量。`);
+            return;
+        }
+
         // Hide landing page
         if (landingPage) {
             landingPage.classList.add('hidden');
         }
 
-        // Process file using App instance
-        if (window.app && window.app.loadFile) {
-            window.app.loadFile(file);
+        // Process files using App instance
+        if (window.app && window.app.loadFiles) {
+            window.app.loadFiles(files);
         } else {
             console.error('App not initialized');
         }
