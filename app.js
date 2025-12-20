@@ -807,6 +807,8 @@ class MapRenderer {
                     zoom: 14,
                     center: [118.79, 32.06], // 默认南京
                     mapStyle: 'amap://styles/normal',
+                    // 截图功能必需参数
+                    WebGLParams: { preserveDrawingBuffer: true },
                 });
 
                 // 添加地图控件
@@ -991,7 +993,7 @@ class Player {
         this.currentSecond = 0;
         this.totalSeconds = 0;
         this.playing = false;
-        this.speed = 60;
+        this.speed = 120;
         this.interval = null;
         // 多用户支持：存储多个会话的索引点
         this.sessions = []; // [{ indexedPoints, totalSeconds, fileName }, ...]
@@ -1824,20 +1826,33 @@ class ChartManager {
 }
 
 // ========================================
-// Screen Recorder - 屏幕录制器
-// 使用 getDisplayMedia 和 MediaRecorder API
+// Video Exporter - 视频导出器
+// 使用 @amap/screenshot 截图 + Canvas 合成 + MediaRecorder
 // ========================================
-class ScreenRecorder {
+class VideoExporter {
     constructor(options = {}) {
+        this.mapRenderer = options.mapRenderer || null;
+        this.chartManager = options.chartManager || null;
+        this.player = options.player || null;
+
+        this.screenshot = null; // AMap.Screenshot 实例
+        this.compositeCanvas = null;
+        this.ctx = null;
         this.mediaRecorder = null;
         this.recordedChunks = [];
-        this.stream = null;
-        this.format = 'mp4'; // 固定为 MP4
         this.isRecording = false;
+        this.animationFrameId = null;
+
+        // 输出规格
+        this.outputWidth = 1920;  // 1080p
+        this.outputHeight = 1080;
+        this.frameRate = 15;      // 15 FPS
+        this.bitRate = 2500000;   // 2.5 Mbps - 适合社交媒体
 
         this.onRecordingStart = options.onRecordingStart || (() => { });
         this.onRecordingStop = options.onRecordingStop || (() => { });
-        this.onError = options.onError || ((err) => console.error('[ScreenRecorder] Error:', err));
+        this.onProgress = options.onProgress || (() => { });
+        this.onError = options.onError || ((err) => console.error('[VideoExporter] Error:', err));
 
         // 菜单元素
         this.$btnMenu = document.getElementById('btn-menu');
@@ -1880,38 +1895,56 @@ class ScreenRecorder {
         }
     }
 
+    /**
+     * 初始化截图插件（需要在地图加载后调用）
+     */
+    initScreenshot() {
+        if (!this.mapRenderer || !this.mapRenderer.map) {
+            console.warn('[VideoExporter] Map not ready for screenshot');
+            return false;
+        }
+
+        if (typeof AMap === 'undefined' || typeof AMap.Screenshot === 'undefined') {
+            console.warn('[VideoExporter] AMap.Screenshot not available');
+            return false;
+        }
+
+        this.screenshot = new AMap.Screenshot(this.mapRenderer.map);
+        console.log('[VideoExporter] Screenshot plugin initialized');
+        return true;
+    }
+
     async start() {
         if (this.isRecording) return;
 
-        try {
-            console.log('[ScreenRecorder] Requesting screen capture...');
-
-            // 请求屏幕共享
-            this.stream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    cursor: 'always',
-                    displaySurface: 'browser', // 优先当前标签页
-                },
-                audio: false, // 不录制音频
-            });
-
-            // 确定 MIME 类型 - 优先使用 MP4，回退到 WebM
-            let mimeType = 'video/webm;codecs=vp9';
-            if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
-                mimeType = 'video/mp4;codecs=h264';
-            } else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
-                mimeType = 'video/webm;codecs=h264';
-                console.warn('[ScreenRecorder] MP4 not supported, using WebM with H264');
-            } else {
-                console.warn('[ScreenRecorder] MP4 not supported, falling back to WebM VP9');
+        // 确保截图插件已初始化
+        if (!this.screenshot) {
+            if (!this.initScreenshot()) {
+                this.onError(new Error('Screenshot plugin not available'));
+                return;
             }
+        }
 
-            console.log('[ScreenRecorder] Using MIME type:', mimeType);
+        try {
+            console.log('[VideoExporter] Starting video export...');
+
+            // 创建合成 Canvas
+            this.compositeCanvas = document.createElement('canvas');
+            this.compositeCanvas.width = this.outputWidth;
+            this.compositeCanvas.height = this.outputHeight;
+            this.ctx = this.compositeCanvas.getContext('2d');
+
+            // 获取 Canvas 流
+            const stream = this.compositeCanvas.captureStream(this.frameRate);
+
+            // 使用 WebM 格式（浏览器不支持 MP4 MediaRecorder）
+            const mimeType = 'video/webm;codecs=vp9';
+            console.log('[VideoExporter] Using MIME type:', mimeType);
 
             this.recordedChunks = [];
-            this.mediaRecorder = new MediaRecorder(this.stream, {
+            this.mediaRecorder = new MediaRecorder(stream, {
                 mimeType: mimeType,
-                videoBitsPerSecond: 5000000, // 5 Mbps - 高质量
+                videoBitsPerSecond: this.bitRate,
             });
 
             this.mediaRecorder.ondataavailable = (event) => {
@@ -1924,86 +1957,222 @@ class ScreenRecorder {
                 this.exportVideo();
             };
 
-            // 监听用户手动停止共享
-            this.stream.getVideoTracks()[0].onended = () => {
-                console.log('[ScreenRecorder] Screen sharing stopped by user');
-                if (this.isRecording) {
-                    this.stop();
-                }
-            };
+            // 重置播放并开始，设置录制专用倍速 240x
+            if (this.player) {
+                this.originalSpeed = this.player.speed; // 保存原始速度
+                this.player.seekTo(0);
+                this.player.play();
+                // 必须在 play() 之后调用 setSpeed，这样会重新启动定时器
+                this.player.setSpeed(240); // 录制时使用 240 倍速
+                // 更新 UI 中的速度选择器
+                const speedSelect = document.getElementById('speed-select');
+                if (speedSelect) speedSelect.value = '240';
+            }
 
             this.mediaRecorder.start(1000); // 每秒收集一次数据
             this.isRecording = true;
 
-            // 更新菜单项 UI
+            // 更新 UI
             if (this.$btnExport) {
                 this.$btnExport.classList.add('recording');
-                this.$btnExport.innerHTML = '<i class="fas fa-stop"></i><span>停止录制</span>';
+                this.$btnExport.innerHTML = '<i class="fas fa-stop"></i><span>停止导出</span>';
             }
 
-            console.log('[ScreenRecorder] Recording started');
+            console.log('[VideoExporter] Recording started');
             this.onRecordingStart();
 
+            // 开始帧循环
+            this.captureLoop();
+
         } catch (error) {
-            console.error('[ScreenRecorder] Failed to start recording:', error);
+            console.error('[VideoExporter] Failed to start:', error);
             this.onError(error);
             this.resetUI();
         }
     }
 
-    stop() {
-        if (!this.isRecording || !this.mediaRecorder) return;
+    async captureLoop() {
+        if (!this.isRecording) return;
 
-        console.log('[ScreenRecorder] Stopping recording...');
+        try {
+            await this.captureFrame();
+        } catch (err) {
+            console.warn('[VideoExporter] Frame capture error:', err);
+        }
+
+        // 继续下一帧
+        this.animationFrameId = requestAnimationFrame(() => this.captureLoop());
+    }
+
+    async captureFrame() {
+        if (!this.screenshot || !this.ctx) return;
+
+        // 1. 截取地图
+        const mapDataUrl = await this.screenshot.toDataURL();
+        const mapImage = await this.loadImage(mapDataUrl);
+
+        // 2. 绘制黑色背景
+        this.ctx.fillStyle = '#1a1a2e';
+        this.ctx.fillRect(0, 0, this.outputWidth, this.outputHeight);
+
+        // 3. 计算地图绘制区域（保持比例居中）
+        const mapAspect = mapImage.width / mapImage.height;
+        const canvasAspect = this.outputWidth / this.outputHeight;
+
+        let drawWidth, drawHeight, drawX, drawY;
+        if (mapAspect > canvasAspect) {
+            // 地图更宽，按宽度适配
+            drawWidth = this.outputWidth;
+            drawHeight = this.outputWidth / mapAspect;
+            drawX = 0;
+            drawY = (this.outputHeight - drawHeight) / 2;
+        } else {
+            // 地图更高，按高度适配
+            drawHeight = this.outputHeight;
+            drawWidth = this.outputHeight * mapAspect;
+            drawX = (this.outputWidth - drawWidth) / 2;
+            drawY = 0;
+        }
+
+        // 4. 绘制地图
+        this.ctx.drawImage(mapImage, drawX, drawY, drawWidth, drawHeight);
+
+        // 5. 可选：绘制图表叠加层（如果有）
+        if (this.chartManager) {
+            this.drawChartsOverlay(drawX, drawY, drawWidth, drawHeight);
+        }
+    }
+
+    drawChartsOverlay(mapX, mapY, mapWidth, mapHeight) {
+        // 获取图表 Canvas 元素
+        const chartCanvases = document.querySelectorAll('.chart-box canvas');
+        if (chartCanvases.length === 0) return;
+
+        // 在底部绘制图表条
+        const chartHeight = 120;
+        const chartY = this.outputHeight - chartHeight - 20;
+        const chartWidth = this.outputWidth - 40;
+
+        // 半透明背景
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.fillRect(20, chartY, chartWidth, chartHeight);
+
+        // 绘制每个图表
+        const chartSlotWidth = chartWidth / chartCanvases.length;
+        chartCanvases.forEach((canvas, index) => {
+            const x = 20 + index * chartSlotWidth;
+            try {
+                this.ctx.drawImage(canvas, x + 5, chartY + 5, chartSlotWidth - 10, chartHeight - 10);
+            } catch (e) {
+                // 忽略跨域图表
+            }
+        });
+    }
+
+    loadImage(src) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = src;
+        });
+    }
+
+    stop() {
+        if (!this.isRecording) return;
+
+        console.log('[VideoExporter] Stopping...');
         this.isRecording = false;
 
-        this.mediaRecorder.stop();
+        // 停止动画循环
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
 
-        // 停止所有轨道
-        if (this.stream) {
-            this.stream.getTracks().forEach(track => track.stop());
-            this.stream = null;
+        // 停止播放并恢复原始速度
+        if (this.player) {
+            this.player.pause();
+            // 恢复原始速度
+            const originalSpeed = this.originalSpeed || 120;
+            this.player.setSpeed(originalSpeed);
+            const speedSelect = document.getElementById('speed-select');
+            if (speedSelect) speedSelect.value = originalSpeed.toString();
+        }
+
+        // 停止录制
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.stop();
         }
 
         this.resetUI();
         this.onRecordingStop();
     }
 
-    exportVideo() {
+    async exportVideo() {
         if (this.recordedChunks.length === 0) {
-            console.warn('[ScreenRecorder] No data to export');
+            console.warn('[VideoExporter] No data to export');
             return;
         }
 
-        // 确定文件扩展名
-        const mimeType = this.mediaRecorder.mimeType || 'video/webm';
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-
+        // 固定使用 WebM 格式
+        const mimeType = 'video/webm';
         const blob = new Blob(this.recordedChunks, { type: mimeType });
+
+        // 生成文件名: runback-yyyy-mm-ddThh-mm-ss.webm
+        const now = new Date();
+        const pad = (n) => n.toString().padStart(2, '0');
+        const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+        const filename = `runback-${timestamp}.webm`;
+
+        console.log('[VideoExporter] Video exported:', filename, 'Size:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
+
+        // 方法 1：使用 File System Access API（最可靠）
+        if ('showSaveFilePicker' in window) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: filename,
+                    types: [{
+                        description: 'WebM Video',
+                        accept: { 'video/webm': ['.webm'] }
+                    }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                alert(`视频已保存!\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+                return;
+            } catch (e) {
+                if (e.name !== 'AbortError') {
+                    console.warn('[VideoExporter] File System API failed:', e);
+                } else {
+                    console.log('[VideoExporter] User cancelled save dialog');
+                    return;
+                }
+            }
+        }
+
+        // 方法 2：传统下载方式（备用）
         const url = URL.createObjectURL(blob);
-
-        // 生成文件名
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const filename = `runback-recording-${timestamp}.${ext}`;
-
-        // 触发下载
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
+        a.style.display = 'none';
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
 
-        // 释放资源
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 1000);
 
-        console.log('[ScreenRecorder] Video exported:', filename);
+        alert(`视频已保存: ${filename}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB\n\n如果文件名不正确，请手动重命名为 .webm 扩展名`);
     }
 
     resetUI() {
         if (this.$btnExport) {
             this.$btnExport.classList.remove('recording');
-            this.$btnExport.innerHTML = '<i class="fas fa-video"></i><span>导出MP4</span>';
+            this.$btnExport.innerHTML = '<i class="fas fa-video"></i><span>导出视频</span>';
         }
     }
 }
@@ -2052,19 +2221,19 @@ class App {
             },
         });
 
-        // 初始化屏幕录制器
-        this.screenRecorder = new ScreenRecorder({
+        // 初始化视频导出器
+        this.videoExporter = new VideoExporter({
+            mapRenderer: this.mapRenderer,
+            chartManager: this.chartManager,
+            player: this.player,
             onRecordingStart: () => {
-                // 录制开始时，重置播放进度并自动播放
-                console.log('[App] Recording started, resetting and playing');
-                this.player.seekTo(0);
-                this.player.play();
+                console.log('[App] Video export started');
             },
             onRecordingStop: () => {
-                console.log('[App] Recording stopped');
+                console.log('[App] Video export stopped');
             },
             onError: (err) => {
-                console.error('[App] Recording error:', err);
+                console.error('[App] Video export error:', err);
             },
         });
 

@@ -53,7 +53,18 @@
                 script.src = `https://webapi.amap.com/maps?v=2.0&key=${apiKey}`;
                 script.onload = () => {
                     console.log('AMap API loaded successfully');
-                    window.dispatchEvent(new Event('AMapLoaded'));
+                    // 加载截图插件
+                    const screenshotScript = document.createElement('script');
+                    screenshotScript.src = 'https://cdn.jsdelivr.net/npm/@amap/screenshot/dist/index.js';
+                    screenshotScript.onload = () => {
+                        console.log('AMap Screenshot plugin loaded');
+                        window.dispatchEvent(new Event('AMapLoaded'));
+                    };
+                    screenshotScript.onerror = () => {
+                        console.warn('Screenshot plugin failed to load, continuing without it');
+                        window.dispatchEvent(new Event('AMapLoaded'));
+                    };
+                    document.head.appendChild(screenshotScript);
                 };
                 script.onerror = () => console.error('Failed to load AMap API');
                 document.head.appendChild(script);
@@ -104,7 +115,7 @@
                     <div id="menu-dropdown" class="menu-dropdown hidden">
                         <button id="btn-export-mp4" class="menu-item">
                             <i class="fas fa-video"></i>
-                            <span>导出MP4</span>
+                            <span>导出视频</span>
                         </button>
                     </div>
                 </div>
@@ -271,8 +282,8 @@
                             <option value="1">1x</option>
                             <option value="10">10x</option>
                             <option value="30">30x</option>
-                            <option value="60" selected>60x</option>
-                            <option value="120">120x</option>
+                            <option value="60">60x</option>
+                            <option value="120" selected>120x</option>
                             <option value="180">180x</option>
                             <option value="240">240x</option>
                         </select>
