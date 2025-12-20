@@ -1824,6 +1824,191 @@ class ChartManager {
 }
 
 // ========================================
+// Screen Recorder - 屏幕录制器
+// 使用 getDisplayMedia 和 MediaRecorder API
+// ========================================
+class ScreenRecorder {
+    constructor(options = {}) {
+        this.mediaRecorder = null;
+        this.recordedChunks = [];
+        this.stream = null;
+        this.format = 'mp4'; // 固定为 MP4
+        this.isRecording = false;
+
+        this.onRecordingStart = options.onRecordingStart || (() => { });
+        this.onRecordingStop = options.onRecordingStop || (() => { });
+        this.onError = options.onError || ((err) => console.error('[ScreenRecorder] Error:', err));
+
+        // 菜单元素
+        this.$btnMenu = document.getElementById('btn-menu');
+        this.$menuDropdown = document.getElementById('menu-dropdown');
+        this.$btnExport = document.getElementById('btn-export-mp4');
+
+        this.initControls();
+    }
+
+    initControls() {
+        // 菜单按钮点击 - 切换下拉菜单
+        if (this.$btnMenu && this.$menuDropdown) {
+            this.$btnMenu.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.$menuDropdown.classList.toggle('hidden');
+            });
+
+            // 点击其他地方关闭菜单
+            document.addEventListener('click', (e) => {
+                if (!this.$menuDropdown.contains(e.target) && e.target !== this.$btnMenu) {
+                    this.$menuDropdown.classList.add('hidden');
+                }
+            });
+        }
+
+        // 导出按钮点击
+        if (this.$btnExport) {
+            this.$btnExport.addEventListener('click', () => {
+                // 关闭菜单
+                if (this.$menuDropdown) {
+                    this.$menuDropdown.classList.add('hidden');
+                }
+
+                if (this.isRecording) {
+                    this.stop();
+                } else {
+                    this.start();
+                }
+            });
+        }
+    }
+
+    async start() {
+        if (this.isRecording) return;
+
+        try {
+            console.log('[ScreenRecorder] Requesting screen capture...');
+
+            // 请求屏幕共享
+            this.stream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    cursor: 'always',
+                    displaySurface: 'browser', // 优先当前标签页
+                },
+                audio: false, // 不录制音频
+            });
+
+            // 确定 MIME 类型 - 优先使用 MP4，回退到 WebM
+            let mimeType = 'video/webm;codecs=vp9';
+            if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264')) {
+                mimeType = 'video/mp4;codecs=h264';
+            } else if (MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
+                mimeType = 'video/webm;codecs=h264';
+                console.warn('[ScreenRecorder] MP4 not supported, using WebM with H264');
+            } else {
+                console.warn('[ScreenRecorder] MP4 not supported, falling back to WebM VP9');
+            }
+
+            console.log('[ScreenRecorder] Using MIME type:', mimeType);
+
+            this.recordedChunks = [];
+            this.mediaRecorder = new MediaRecorder(this.stream, {
+                mimeType: mimeType,
+                videoBitsPerSecond: 5000000, // 5 Mbps - 高质量
+            });
+
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.recordedChunks.push(event.data);
+                }
+            };
+
+            this.mediaRecorder.onstop = () => {
+                this.exportVideo();
+            };
+
+            // 监听用户手动停止共享
+            this.stream.getVideoTracks()[0].onended = () => {
+                console.log('[ScreenRecorder] Screen sharing stopped by user');
+                if (this.isRecording) {
+                    this.stop();
+                }
+            };
+
+            this.mediaRecorder.start(1000); // 每秒收集一次数据
+            this.isRecording = true;
+
+            // 更新菜单项 UI
+            if (this.$btnExport) {
+                this.$btnExport.classList.add('recording');
+                this.$btnExport.innerHTML = '<i class="fas fa-stop"></i><span>停止录制</span>';
+            }
+
+            console.log('[ScreenRecorder] Recording started');
+            this.onRecordingStart();
+
+        } catch (error) {
+            console.error('[ScreenRecorder] Failed to start recording:', error);
+            this.onError(error);
+            this.resetUI();
+        }
+    }
+
+    stop() {
+        if (!this.isRecording || !this.mediaRecorder) return;
+
+        console.log('[ScreenRecorder] Stopping recording...');
+        this.isRecording = false;
+
+        this.mediaRecorder.stop();
+
+        // 停止所有轨道
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.stream = null;
+        }
+
+        this.resetUI();
+        this.onRecordingStop();
+    }
+
+    exportVideo() {
+        if (this.recordedChunks.length === 0) {
+            console.warn('[ScreenRecorder] No data to export');
+            return;
+        }
+
+        // 确定文件扩展名
+        const mimeType = this.mediaRecorder.mimeType || 'video/webm';
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+
+        const blob = new Blob(this.recordedChunks, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+
+        // 生成文件名
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `runback-recording-${timestamp}.${ext}`;
+
+        // 触发下载
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        // 释放资源
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        console.log('[ScreenRecorder] Video exported:', filename);
+    }
+
+    resetUI() {
+        if (this.$btnExport) {
+            this.$btnExport.classList.remove('recording');
+            this.$btnExport.innerHTML = '<i class="fas fa-video"></i><span>导出MP4</span>';
+        }
+    }
+}
+
+// ========================================
 // App - 主应用 - 多用户支持
 // ========================================
 class App {
@@ -1854,10 +2039,32 @@ class App {
                 }
             },
             onTimeUpdate: (current, total) => {
-                // 可以添加额外的时间更新逻辑
+                // 如果正在录制且播放结束，自动停止录制
+                if (this.screenRecorder && this.screenRecorder.isRecording) {
+                    if (current >= total && total > 0) {
+                        console.log('[App] Playback finished, auto-stopping recording');
+                        this.screenRecorder.stop();
+                    }
+                }
             },
             onPlayStateChange: (playing) => {
                 // 可以添加播放状态变化逻辑
+            },
+        });
+
+        // 初始化屏幕录制器
+        this.screenRecorder = new ScreenRecorder({
+            onRecordingStart: () => {
+                // 录制开始时，重置播放进度并自动播放
+                console.log('[App] Recording started, resetting and playing');
+                this.player.seekTo(0);
+                this.player.play();
+            },
+            onRecordingStop: () => {
+                console.log('[App] Recording stopped');
+            },
+            onError: (err) => {
+                console.error('[App] Recording error:', err);
             },
         });
 
