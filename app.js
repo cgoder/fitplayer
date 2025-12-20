@@ -1295,6 +1295,28 @@ class ChartManager {
         const heartrateDatasets = [];
         const altitudeDatasets = [];
 
+        // 判断是否为单用户模式（使用渐变填充效果）
+        const isSingleUser = sessions.length === 1;
+
+        // 单用户模式的渐变颜色配置（与原设计一致）
+        const chartColors = {
+            pace: {
+                border: '#34d399',
+                fill: 'rgba(52, 211, 153, 0.3)',
+                gradient: ['rgba(52, 211, 153, 0.5)', 'rgba(52, 211, 153, 0.05)']
+            },
+            heartrate: {
+                border: '#f472b6',
+                fill: 'rgba(244, 114, 182, 0.3)',
+                gradient: ['rgba(244, 114, 182, 0.5)', 'rgba(244, 114, 182, 0.05)']
+            },
+            altitude: {
+                border: '#60a5fa',
+                fill: 'rgba(96, 165, 250, 0.3)',
+                gradient: ['rgba(96, 165, 250, 0.5)', 'rgba(96, 165, 250, 0.05)']
+            }
+        };
+
         sessions.forEach((session, index) => {
             const points = session.points;
             if (!points || points.length === 0) return;
@@ -1334,9 +1356,9 @@ class ChartManager {
             paceDatasets.push({
                 label: style.label,
                 data: paceData,
-                borderColor: style.color,
-                backgroundColor: 'transparent',
-                fill: false,
+                borderColor: isSingleUser ? chartColors.pace.border : style.color,
+                backgroundColor: isSingleUser ? chartColors.pace.fill : 'transparent',
+                fill: isSingleUser ? 'origin' : false,
                 pointRadius: 0,
                 borderWidth: 2,
                 spanGaps: false,
@@ -1346,9 +1368,9 @@ class ChartManager {
             heartrateDatasets.push({
                 label: style.label,
                 data: heartrateData,
-                borderColor: style.color,
-                backgroundColor: 'transparent',
-                fill: false,
+                borderColor: isSingleUser ? chartColors.heartrate.border : style.color,
+                backgroundColor: isSingleUser ? chartColors.heartrate.fill : 'transparent',
+                fill: isSingleUser ? 'origin' : false,
                 pointRadius: 0,
                 borderWidth: 2,
                 spanGaps: false,
@@ -1358,9 +1380,9 @@ class ChartManager {
             altitudeDatasets.push({
                 label: style.label,
                 data: altitudeData,
-                borderColor: style.color,
-                backgroundColor: 'transparent',
-                fill: false,
+                borderColor: isSingleUser ? chartColors.altitude.border : style.color,
+                backgroundColor: isSingleUser ? chartColors.altitude.fill : 'transparent',
+                fill: isSingleUser ? 'origin' : false,
                 pointRadius: 0,
                 borderWidth: 2,
                 spanGaps: false,
