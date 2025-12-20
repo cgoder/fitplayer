@@ -513,6 +513,276 @@ class FitParser {
 }
 
 // ========================================
+// TCX Parser - TCX 文件解析器 (XML 格式)
+// ========================================
+class TcxParser {
+    async parse(arrayBuffer) {
+        try {
+            const text = new TextDecoder('utf-8').decode(arrayBuffer);
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'text/xml');
+
+            // 检查解析错误
+            const parseError = doc.querySelector('parsererror');
+            if (parseError) {
+                throw new Error('无效的 TCX 文件格式');
+            }
+
+            // 获取所有 Trackpoint 元素
+            const trackpoints = doc.querySelectorAll('Trackpoint');
+            if (trackpoints.length === 0) {
+                throw new Error('TCX 文件中没有找到轨迹点');
+            }
+
+            const points = [];
+            let startTime = null;
+
+            trackpoints.forEach((tp, index) => {
+                const timeEl = tp.querySelector('Time');
+                const posEl = tp.querySelector('Position');
+                const hrEl = tp.querySelector('HeartRateBpm Value');
+                const altEl = tp.querySelector('AltitudeMeters');
+                const distEl = tp.querySelector('DistanceMeters');
+                const cadenceEl = tp.querySelector('Cadence') || tp.querySelector('RunCadence');
+
+                // 必须有位置信息
+                if (!posEl) return;
+
+                const latEl = posEl.querySelector('LatitudeDegrees');
+                const lngEl = posEl.querySelector('LongitudeDegrees');
+
+                if (!latEl || !lngEl) return;
+
+                const lat = parseFloat(latEl.textContent);
+                const lng = parseFloat(lngEl.textContent);
+
+                // 验证坐标有效性
+                if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+
+                const timestamp = timeEl ? new Date(timeEl.textContent) : null;
+                if (!startTime && timestamp) startTime = timestamp;
+
+                const elapsed_time = (startTime && timestamp)
+                    ? (timestamp.getTime() - startTime.getTime()) / 1000
+                    : index;
+
+                // WGS-84 转 GCJ-02 (适配高德地图)
+                const gcj02 = CoordTransform.wgs84ToGcj02(lng, lat);
+
+                // 解析速度（从扩展中获取）
+                let speed = null;
+                const speedEl = tp.querySelector('Extensions Speed') || tp.querySelector('ns3\\:Speed') || tp.querySelector('Speed');
+                if (speedEl) {
+                    speed = parseFloat(speedEl.textContent);
+                }
+
+                points.push({
+                    index: points.length,
+                    lat: gcj02.lat,
+                    lng: gcj02.lng,
+                    wgs84_lat: lat,
+                    wgs84_lng: lng,
+                    timestamp,
+                    elapsed_time,
+                    heart_rate: hrEl ? parseInt(hrEl.textContent) : undefined,
+                    speed,
+                    altitude: altEl ? parseFloat(altEl.textContent) : undefined,
+                    distance: distEl ? parseFloat(distEl.textContent) / 1000 : undefined, // 转换为公里
+                    cadence: cadenceEl ? parseInt(cadenceEl.textContent) : undefined,
+                });
+            });
+
+            console.log('TCX - Valid GPS points:', points.length);
+            if (points.length > 0) {
+                console.log('First point:', points[0]);
+                console.log('Last point:', points[points.length - 1]);
+            }
+
+            // 计算总时长
+            const totalSeconds = points.length > 0
+                ? Math.max(...points.map(p => p.elapsed_time || 0))
+                : 0;
+
+            // 创建按秒索引的点数组
+            const indexedPoints = this.createIndexedPoints(points, totalSeconds);
+
+            return {
+                points,
+                indexedPoints,
+                totalSeconds: Math.ceil(totalSeconds),
+                startTime: points[0]?.timestamp,
+                endTime: points[points.length - 1]?.timestamp,
+                summary: {},
+            };
+
+        } catch (error) {
+            console.error('TCX 解析错误:', error);
+            throw error;
+        }
+    }
+
+    createIndexedPoints(points, totalSeconds) {
+        if (points.length === 0) return [];
+
+        const indexed = [];
+        let pointIndex = 0;
+
+        for (let second = 0; second <= totalSeconds; second++) {
+            while (pointIndex < points.length - 1 &&
+                points[pointIndex + 1].elapsed_time <= second) {
+                pointIndex++;
+            }
+            indexed[second] = points[pointIndex];
+        }
+
+        return indexed;
+    }
+}
+
+// ========================================
+// GPX Parser - GPX 文件解析器 (XML 格式)
+// ========================================
+class GpxParser {
+    async parse(arrayBuffer) {
+        try {
+            const text = new TextDecoder('utf-8').decode(arrayBuffer);
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'text/xml');
+
+            // 检查解析错误
+            const parseError = doc.querySelector('parsererror');
+            if (parseError) {
+                throw new Error('无效的 GPX 文件格式');
+            }
+
+            // 获取所有轨迹点 (trkpt)
+            const trkpts = doc.querySelectorAll('trkpt');
+            if (trkpts.length === 0) {
+                throw new Error('GPX 文件中没有找到轨迹点');
+            }
+
+            const points = [];
+            let startTime = null;
+            let totalDistance = 0;
+            let prevPoint = null;
+
+            trkpts.forEach((trkpt, index) => {
+                const lat = parseFloat(trkpt.getAttribute('lat'));
+                const lng = parseFloat(trkpt.getAttribute('lon'));
+
+                // 验证坐标有效性
+                if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+
+                const timeEl = trkpt.querySelector('time');
+                const eleEl = trkpt.querySelector('ele');
+                const hrEl = trkpt.querySelector('hr') || trkpt.querySelector('gpxtpx\\:hr') || trkpt.querySelector('ns3\\:hr');
+                const cadenceEl = trkpt.querySelector('cad') || trkpt.querySelector('gpxtpx\\:cad') || trkpt.querySelector('ns3\\:cad');
+
+                const timestamp = timeEl ? new Date(timeEl.textContent) : null;
+                if (!startTime && timestamp) startTime = timestamp;
+
+                const elapsed_time = (startTime && timestamp)
+                    ? (timestamp.getTime() - startTime.getTime()) / 1000
+                    : index;
+
+                // WGS-84 转 GCJ-02 (适配高德地图)
+                const gcj02 = CoordTransform.wgs84ToGcj02(lng, lat);
+
+                // 计算距离（使用 Haversine 公式）
+                if (prevPoint) {
+                    const dist = this.haversineDistance(prevPoint.wgs84_lat, prevPoint.wgs84_lng, lat, lng);
+                    totalDistance += dist;
+                }
+
+                // 计算速度（米/秒转公里/小时）
+                let speed = null;
+                if (prevPoint && timestamp && prevPoint.timestamp) {
+                    const timeDiff = (timestamp.getTime() - prevPoint.timestamp.getTime()) / 1000; // 秒
+                    if (timeDiff > 0) {
+                        const dist = this.haversineDistance(prevPoint.wgs84_lat, prevPoint.wgs84_lng, lat, lng);
+                        speed = (dist / timeDiff) * 3.6; // 转换为 km/h
+                    }
+                }
+
+                const point = {
+                    index: points.length,
+                    lat: gcj02.lat,
+                    lng: gcj02.lng,
+                    wgs84_lat: lat,
+                    wgs84_lng: lng,
+                    timestamp,
+                    elapsed_time,
+                    heart_rate: hrEl ? parseInt(hrEl.textContent) : undefined,
+                    speed,
+                    altitude: eleEl ? parseFloat(eleEl.textContent) : undefined,
+                    distance: totalDistance / 1000, // 转换为公里
+                    cadence: cadenceEl ? parseInt(cadenceEl.textContent) : undefined,
+                };
+
+                points.push(point);
+                prevPoint = point;
+            });
+
+            console.log('GPX - Valid GPS points:', points.length);
+            if (points.length > 0) {
+                console.log('First point:', points[0]);
+                console.log('Last point:', points[points.length - 1]);
+            }
+
+            // 计算总时长
+            const totalSeconds = points.length > 0
+                ? Math.max(...points.map(p => p.elapsed_time || 0))
+                : 0;
+
+            // 创建按秒索引的点数组
+            const indexedPoints = this.createIndexedPoints(points, totalSeconds);
+
+            return {
+                points,
+                indexedPoints,
+                totalSeconds: Math.ceil(totalSeconds),
+                startTime: points[0]?.timestamp,
+                endTime: points[points.length - 1]?.timestamp,
+                summary: {},
+            };
+
+        } catch (error) {
+            console.error('GPX 解析错误:', error);
+            throw error;
+        }
+    }
+
+    // Haversine 公式计算两点间距离（米）
+    haversineDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371000; // 地球半径（米）
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    createIndexedPoints(points, totalSeconds) {
+        if (points.length === 0) return [];
+
+        const indexed = [];
+        let pointIndex = 0;
+
+        for (let second = 0; second <= totalSeconds; second++) {
+            while (pointIndex < points.length - 1 &&
+                points[pointIndex + 1].elapsed_time <= second) {
+                pointIndex++;
+            }
+            indexed[second] = points[pointIndex];
+        }
+
+        return indexed;
+    }
+}
+
+// ========================================
 // Map Renderer - 地图渲染器 (高德地图) - 多用户支持
 // ========================================
 class MapRenderer {
@@ -1030,6 +1300,15 @@ class DataPanel {
             const style = USER_STYLES[index] || USER_STYLES[0];
             const fileName = session.fileName || `用户 ${index + 1}`;
 
+            // 获取总时间和总距离
+            const totalTime = this.formatTime(session.totalSeconds || 0);
+            const lastPoint = session.points && session.points.length > 0
+                ? session.points[session.points.length - 1]
+                : null;
+            const totalDistance = lastPoint && lastPoint.distance !== undefined
+                ? lastPoint.distance.toFixed(2)
+                : '0.00';
+
             // 创建用户行
             const row = document.createElement('div');
             row.className = 'data-user-row';
@@ -1043,10 +1322,10 @@ class DataPanel {
                     <span class="user-name" title="${fileName}">${this.truncateFileName(fileName)}</span>
                     <div class="user-stats">
                         <span class="stat-item">
-                            <span class="stat-value" data-field="time">00:00:00</span>
+                            <span class="stat-value" data-field="time">${totalTime}</span>
                         </span>
                         <span class="stat-item">
-                            <span class="stat-value" data-field="distance">0.00</span>
+                            <span class="stat-value" data-field="distance">${totalDistance}</span>
                             <span class="stat-unit">km</span>
                         </span>
                     </div>
@@ -1191,10 +1470,12 @@ class DataPanel {
     }
 
     truncateFileName(name) {
-        if (name.length > 15) {
-            return name.substring(0, 12) + '...';
+        // 移除文件扩展名
+        const baseName = name.replace(/\.(fit|tcx|gpx)$/i, '');
+        if (baseName.length > 15) {
+            return baseName.substring(0, 12) + '...';
         }
-        return name;
+        return baseName;
     }
 
     formatTime(seconds) {
@@ -1549,6 +1830,8 @@ class App {
     constructor() {
         this.themeManager = new ThemeManager();
         this.fitParser = new FitParser();
+        this.tcxParser = new TcxParser();
+        this.gpxParser = new GpxParser();
         this.mapRenderer = new MapRenderer('map');
         this.dataPanel = new DataPanel();
         this.chartManager = new ChartManager();
@@ -1706,20 +1989,33 @@ class App {
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
-                    const fitData = await this.fitParser.parse(arrayBuffer);
 
-                    if (fitData.points.length === 0) {
+                    // 根据文件扩展名选择解析器
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    let parsedData;
+
+                    if (ext === 'tcx') {
+                        parsedData = await this.tcxParser.parse(arrayBuffer);
+                    } else if (ext === 'gpx') {
+                        parsedData = await this.gpxParser.parse(arrayBuffer);
+                    } else if (ext === 'fit') {
+                        parsedData = await this.fitParser.parse(arrayBuffer);
+                    } else {
+                        throw new Error(`不支持的文件格式: .${ext}`);
+                    }
+
+                    if (parsedData.points.length === 0) {
                         console.warn(`File ${file.name} has no GPS data, skipping.`);
                         continue;
                     }
 
                     this.sessions.push({
                         fileName: file.name,
-                        points: fitData.points,
-                        indexedPoints: fitData.indexedPoints,
-                        totalSeconds: fitData.totalSeconds,
-                        startTime: fitData.startTime,
-                        endTime: fitData.endTime,
+                        points: parsedData.points,
+                        indexedPoints: parsedData.indexedPoints,
+                        totalSeconds: parsedData.totalSeconds,
+                        startTime: parsedData.startTime,
+                        endTime: parsedData.endTime,
                     });
                 } catch (parseError) {
                     console.error(`Error parsing file ${file.name}:`, parseError);
@@ -1762,11 +2058,8 @@ class App {
                 this.player.setSessionsData(playerSessions, globalTotalSeconds);
             }
 
-            // 更新初始数据面板
-            const initialPoints = this.sessions.map(s => s.indexedPoints[0]);
-            if (this.dataPanel) {
-                this.dataPanel.updateMultiple(initialPoints, 0);
-            }
+            // initSummaries 已显示总数据，播放时再更新
+            // （移除初始 updateMultiple 调用，避免覆盖总数据）
 
             // 隐藏上传覆盖层，显示控制面板
             this.hideUploadOverlay();
