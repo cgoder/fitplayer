@@ -1829,13 +1829,19 @@ class ChartManager {
 // Video Exporter - 视频导出器
 // 使用 @amap/screenshot 截图 + Canvas 合成 + MediaRecorder
 // ========================================
+// ========================================
+// Video Exporter - 视频导出器
+// 使用 Canvas 组合 + MediaRecorder (高性能/MP4)
+// ========================================
 class VideoExporter {
     constructor(options = {}) {
         this.mapRenderer = options.mapRenderer || null;
         this.chartManager = options.chartManager || null;
         this.player = options.player || null;
 
-        this.screenshot = null; // AMap.Screenshot 实例
+        // 会话数据 (用于手动绘制 Avatar)
+        this.sessions = [];
+
         this.compositeCanvas = null;
         this.ctx = null;
         this.mediaRecorder = null;
@@ -1846,12 +1852,10 @@ class VideoExporter {
         // 输出规格
         this.outputWidth = 1920;  // 1080p
         this.outputHeight = 1080;
-        this.frameRate = 15;      // 15 FPS
-        this.bitRate = 2500000;   // 2.5 Mbps - 适合社交媒体
+        this.bitRate = 3500000;   // 3.5 Mbps - 提高到 3.5M 以保证 60FPS 质量
 
         this.onRecordingStart = options.onRecordingStart || (() => { });
         this.onRecordingStop = options.onRecordingStop || (() => { });
-        this.onProgress = options.onProgress || (() => { });
         this.onError = options.onError || ((err) => console.error('[VideoExporter] Error:', err));
 
         // 菜单元素
@@ -1895,50 +1899,52 @@ class VideoExporter {
         }
     }
 
+    updateSessions(sessions) {
+        this.sessions = sessions || [];
+    }
+
     /**
-     * 初始化截图插件（需要在地图加载后调用）
+     * 查找地图 Canvas
      */
-    initScreenshot() {
-        if (!this.mapRenderer || !this.mapRenderer.map) {
-            console.warn('[VideoExporter] Map not ready for screenshot');
-            return false;
-        }
-
-        if (typeof AMap === 'undefined' || typeof AMap.Screenshot === 'undefined') {
-            console.warn('[VideoExporter] AMap.Screenshot not available');
-            return false;
-        }
-
-        this.screenshot = new AMap.Screenshot(this.mapRenderer.map);
-        console.log('[VideoExporter] Screenshot plugin initialized');
-        return true;
+    findMapCanvas() {
+        if (!this.mapRenderer || !this.mapRenderer.map) return null;
+        const container = this.mapRenderer.map.getContainer();
+        // 尝试获取地图底层的 Canvas (通常是第一个 Canvas)
+        const canvas = container.querySelector('canvas.amap-layer') || container.querySelector('canvas');
+        return canvas;
     }
 
     async start() {
         if (this.isRecording) return;
 
-        // 确保截图插件已初始化
-        if (!this.screenshot) {
-            if (!this.initScreenshot()) {
-                this.onError(new Error('Screenshot plugin not available'));
-                return;
-            }
+        // 1. 检查地图 Canvas
+        const mapCanvas = this.findMapCanvas();
+        if (!mapCanvas) {
+            this.onError(new Error('Cannot find Map Canvas for recording'));
+            alert('无法找到地图 Canvas，录制失败。请确保地图已完全加载。');
+            return;
         }
 
         try {
-            console.log('[VideoExporter] Starting video export...');
+            console.log('[VideoExporter] Starting high-performance video export...');
 
-            // 创建合成 Canvas
+            // 2. 创建合成 Canvas
             this.compositeCanvas = document.createElement('canvas');
             this.compositeCanvas.width = this.outputWidth;
             this.compositeCanvas.height = this.outputHeight;
-            this.ctx = this.compositeCanvas.getContext('2d');
+            this.ctx = this.compositeCanvas.getContext('2d', { alpha: false }); // 优化性能
 
-            // 获取 Canvas 流
-            const stream = this.compositeCanvas.captureStream(this.frameRate);
+            // 3. 获取 Canvas 流 (尝试 60FPS)
+            const stream = this.compositeCanvas.captureStream(60);
 
-            // 使用 WebM 格式（浏览器不支持 MP4 MediaRecorder）
-            const mimeType = 'video/webm;codecs=vp9';
+            // 4. 选择最佳 MIME 类型 (优先 MP4)
+            let mimeType = 'video/webm;codecs=vp9';
+            if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2')) {
+                mimeType = 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
+            } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+                mimeType = 'video/mp4';
+            }
+
             console.log('[VideoExporter] Using MIME type:', mimeType);
 
             this.recordedChunks = [];
@@ -1954,22 +1960,26 @@ class VideoExporter {
             };
 
             this.mediaRecorder.onstop = () => {
-                this.exportVideo();
+                this.exportVideo(mimeType);
             };
 
-            // 重置播放并开始，设置录制专用倍速 240x
+            // 5. 设置播放速度并开始
             if (this.player) {
                 this.originalSpeed = this.player.speed; // 保存原始速度
                 this.player.seekTo(0);
                 this.player.play();
-                // 必须在 play() 之后调用 setSpeed，这样会重新启动定时器
-                this.player.setSpeed(240); // 录制时使用 240 倍速
-                // 更新 UI 中的速度选择器
-                const speedSelect = document.getElementById('speed-select');
-                if (speedSelect) speedSelect.value = '240';
+
+                // 设置为 240x 倍速录制
+                setTimeout(() => {
+                    this.player.setSpeed(240);
+                    // 更新 UI 为了直观（可选）
+                    const speedSelect = document.getElementById('speed-select');
+                    if (speedSelect) speedSelect.value = '240';
+                }, 100);
             }
 
-            this.mediaRecorder.start(1000); // 每秒收集一次数据
+            // 6. 启动录制
+            this.mediaRecorder.start();
             this.isRecording = true;
 
             // 更新 UI
@@ -1981,8 +1991,9 @@ class VideoExporter {
             console.log('[VideoExporter] Recording started');
             this.onRecordingStart();
 
-            // 开始帧循环
-            this.captureLoop();
+            // 7. 开始帧循环 (使用 requestAnimationFrame 实现流畅录制)
+            this.lastTime = Date.now();
+            this.captureLoop(mapCanvas);
 
         } catch (error) {
             console.error('[VideoExporter] Failed to start:', error);
@@ -1991,90 +2002,132 @@ class VideoExporter {
         }
     }
 
-    async captureLoop() {
+    captureLoop(mapCanvas) {
         if (!this.isRecording) return;
 
         try {
-            await this.captureFrame();
+            this.renderFrame(mapCanvas);
         } catch (err) {
-            console.warn('[VideoExporter] Frame capture error:', err);
+            console.warn('[VideoExporter] renderFrame error:', err);
         }
 
-        // 继续下一帧
-        this.animationFrameId = requestAnimationFrame(() => this.captureLoop());
+        this.animationFrameId = requestAnimationFrame(() => this.captureLoop(mapCanvas));
     }
 
-    async captureFrame() {
-        if (!this.screenshot || !this.ctx) return;
+    renderFrame(mapCanvas) {
+        if (!this.ctx) return;
 
-        // 1. 截取地图
-        const mapDataUrl = await this.screenshot.toDataURL();
-        const mapImage = await this.loadImage(mapDataUrl);
-
-        // 2. 绘制黑色背景
+        // 1. 绘制黑色背景
         this.ctx.fillStyle = '#1a1a2e';
         this.ctx.fillRect(0, 0, this.outputWidth, this.outputHeight);
 
-        // 3. 计算地图绘制区域（保持比例居中）
-        const mapAspect = mapImage.width / mapImage.height;
+        // 2. 绘制地图 Canvas (直接从 DOM Canvas 复制，极快)
+        // 计算保持比例的尺寸
+        const mapAspect = mapCanvas.width / mapCanvas.height;
         const canvasAspect = this.outputWidth / this.outputHeight;
-
         let drawWidth, drawHeight, drawX, drawY;
+
         if (mapAspect > canvasAspect) {
-            // 地图更宽，按宽度适配
             drawWidth = this.outputWidth;
             drawHeight = this.outputWidth / mapAspect;
             drawX = 0;
             drawY = (this.outputHeight - drawHeight) / 2;
         } else {
-            // 地图更高，按高度适配
             drawHeight = this.outputHeight;
             drawWidth = this.outputHeight * mapAspect;
             drawX = (this.outputWidth - drawWidth) / 2;
             drawY = 0;
         }
 
-        // 4. 绘制地图
-        this.ctx.drawImage(mapImage, drawX, drawY, drawWidth, drawHeight);
+        // 绘制地图底图
+        this.ctx.drawImage(mapCanvas, 0, 0, mapCanvas.width, mapCanvas.height, drawX, drawY, drawWidth, drawHeight);
 
-        // 5. 可选：绘制图表叠加层（如果有）
+        // 3. 手动绘制 Avatar (因为 DOM 元素无法被 Canvas 捕获)
+        this.drawAvatarOverlay(drawX, drawY, drawWidth, mapCanvas.width);
+
+        // 4. 绘制图表叠加层
         if (this.chartManager) {
             this.drawChartsOverlay(drawX, drawY, drawWidth, drawHeight);
         }
     }
 
-    drawChartsOverlay(mapX, mapY, mapWidth, mapHeight) {
-        // 获取图表 Canvas 元素
-        const chartCanvases = document.querySelectorAll('.chart-box canvas');
-        if (chartCanvases.length === 0) return;
+    drawAvatarOverlay(mapX, mapY, mapDrawWidth, mapSourceWidth) {
+        if (!this.player || !this.mapRenderer || !this.mapRenderer.map) return;
 
-        // 在底部绘制图表条
-        const chartHeight = 120;
-        const chartY = this.outputHeight - chartHeight - 20;
-        const chartWidth = this.outputWidth - 40;
+        const currentSecond = this.player.currentSecond;
+        const dpr = window.devicePixelRatio || 1;
+        // 计算缩放比例:  目标宽度 / (源宽度) 
+        // 源宽度 (mapCanvas.width) = containerWidth * dpr
+        // 所以 scale = mapDrawWidth / mapCanvas.width
+        const scale = mapDrawWidth / mapSourceWidth;
 
-        // 半透明背景
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        this.ctx.fillRect(20, chartY, chartWidth, chartHeight);
+        this.sessions.forEach((session, index) => {
+            // 找到当前位置
+            const point = this.findPointAtTime(session.points, currentSecond);
+            if (point) {
+                // 将经纬度转换为容器像素坐标 (Container CSS Pixels)
+                const pixel = this.mapRenderer.map.lngLatToContainer([point.lng, point.lat]);
 
-        // 绘制每个图表
-        const chartSlotWidth = chartWidth / chartCanvases.length;
-        chartCanvases.forEach((canvas, index) => {
-            const x = 20 + index * chartSlotWidth;
-            try {
-                this.ctx.drawImage(canvas, x + 5, chartY + 5, chartSlotWidth - 10, chartHeight - 10);
-            } catch (e) {
-                // 忽略跨域图表
+                // 转换为 Canvas 坐标
+                // 原始 Canvas 上的位置 = pixel * dpr
+                // 绘制 Canvas 上的位置 = (pixel * dpr) * scale + offset
+                const x = mapX + (pixel.x * dpr) * scale;
+                const y = mapY + (pixel.y * dpr) * scale;
+
+                // 绘制 Avatar 点
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, 8, 0, Math.PI * 2);
+
+                // 颜色 (使用预定义颜色或随机颜色)
+                const colors = ['#ff4d4f', '#1890ff', '#52c41a', '#faad14'];
+                this.ctx.fillStyle = colors[index % colors.length];
+                this.ctx.fill();
+
+                // 白色边框
+                this.ctx.strokeStyle = '#ffffff';
+                this.ctx.lineWidth = 3;
+                this.ctx.stroke();
             }
         });
     }
 
-    loadImage(src) {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.onerror = reject;
-            img.src = src;
+    // 简单的二分查找
+    findPointAtTime(points, targetSecond) {
+        if (!points || points.length === 0) return null;
+        let left = 0;
+        let right = points.length - 1;
+        while (left < right) {
+            const mid = Math.floor((left + right) / 2);
+            if (points[mid].elapsed_time < targetSecond) {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+        return points[left];
+    }
+
+    drawChartsOverlay(mapX, mapY, mapWidth, mapHeight) {
+        // ... (与之前相同，直接绘制 DOM canvas) ...
+        const chartCanvases = document.querySelectorAll('.chart-box canvas');
+        if (chartCanvases.length === 0) return;
+
+        const chartHeight = 120;
+        const chartY = this.outputHeight - chartHeight - 40; // 稍微抬高一点
+        const chartAreaWidth = this.outputWidth - 80;
+
+        // 半透明背景
+        this.ctx.fillStyle = 'rgba(26, 26, 46, 0.8)';
+        this.ctx.fillRect(40, chartY, chartAreaWidth, chartHeight + 20);
+
+        // 绘制每个图表
+        const chartSlotWidth = chartAreaWidth / chartCanvases.length;
+        chartCanvases.forEach((canvas, index) => {
+            const x = 40 + index * chartSlotWidth;
+            try {
+                // 保持图表比例
+                this.ctx.drawImage(canvas, x + 10, chartY + 10, chartSlotWidth - 20, chartHeight);
+            } catch (e) { }
         });
     }
 
@@ -2093,9 +2146,9 @@ class VideoExporter {
         // 停止播放并恢复原始速度
         if (this.player) {
             this.player.pause();
-            // 恢复原始速度
-            const originalSpeed = this.originalSpeed || 120;
+            const originalSpeed = this.originalSpeed || 120; // 默认恢复到 120
             this.player.setSpeed(originalSpeed);
+
             const speedSelect = document.getElementById('speed-select');
             if (speedSelect) speedSelect.value = originalSpeed.toString();
         }
@@ -2109,32 +2162,33 @@ class VideoExporter {
         this.onRecordingStop();
     }
 
-    async exportVideo() {
+    async exportVideo(mimeType) {
         if (this.recordedChunks.length === 0) {
             console.warn('[VideoExporter] No data to export');
             return;
         }
 
-        // 固定使用 WebM 格式
-        const mimeType = 'video/webm';
         const blob = new Blob(this.recordedChunks, { type: mimeType });
 
-        // 生成文件名: runback-yyyy-mm-ddThh-mm-ss.webm
+        // 确定扩展名
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+
+        // 生成文件名: runback-yyyy-mm-ddThh-mm-ss.mp4
         const now = new Date();
         const pad = (n) => n.toString().padStart(2, '0');
         const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        const filename = `runback-${timestamp}.webm`;
+        const filename = `runback-${timestamp}.${ext}`;
 
         console.log('[VideoExporter] Video exported:', filename, 'Size:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
 
-        // 方法 1：使用 File System Access API（最可靠）
+        // 下载逻辑 (保持不变)
         if ('showSaveFilePicker' in window) {
             try {
                 const handle = await window.showSaveFilePicker({
                     suggestedName: filename,
                     types: [{
-                        description: 'WebM Video',
-                        accept: { 'video/webm': ['.webm'] }
+                        description: ext.toUpperCase() + ' Video',
+                        accept: { [mimeType.split(';')[0]]: ['.' + ext] }
                     }]
                 });
                 const writable = await handle.createWritable();
@@ -2143,16 +2197,11 @@ class VideoExporter {
                 alert(`视频已保存!\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
                 return;
             } catch (e) {
-                if (e.name !== 'AbortError') {
-                    console.warn('[VideoExporter] File System API failed:', e);
-                } else {
-                    console.log('[VideoExporter] User cancelled save dialog');
-                    return;
-                }
+                if (e.name !== 'AbortError') console.warn(e);
+                else return;
             }
         }
 
-        // 方法 2：传统下载方式（备用）
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -2166,7 +2215,8 @@ class VideoExporter {
             URL.revokeObjectURL(url);
         }, 1000);
 
-        alert(`视频已保存: ${filename}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB\n\n如果文件名不正确，请手动重命名为 .webm 扩展名`);
+        // 只有在使用 Blob URL 下载时才提示，File System API 不需要
+        alert(`视频已下载: ${filename}`);
     }
 
     resetUI() {
@@ -2417,6 +2467,11 @@ class App {
             // 初始化多用户图表
             if (this.chartManager) {
                 this.chartManager.initMultiCharts(this.sessions, globalTotalSeconds);
+            }
+
+            // 更新视频导出器的会话数据
+            if (this.videoExporter) {
+                this.videoExporter.updateSessions(this.sessions);
             }
 
             // 初始化数据面板
