@@ -238,6 +238,7 @@ body {
 }
 
 .data-panel.expanded {
+    width: 100%;
     max-width: min(28rem, 50vw);
     /* 展开时更宽，仍用rem */
     max-height: 50vh;
@@ -292,37 +293,6 @@ body {
     margin-left: 0.125rem;
 }
 
-/* Panel Collapse Toggle - 响应式尺寸，默认居中 */
-.panel-collapse-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: clamp(1.5rem, 4vw, 2rem);
-    height: clamp(1.5rem, 4vw, 2rem);
-    background: transparent;
-    cursor: pointer;
-    border: none;
-    border-radius: 0.5rem;
-    margin: clamp(0.25rem, 1vh, 0.5rem) auto;
-    /* 居中 */
-    transition: background-color 0.2s ease, transform 0.2s ease;
-}
-
-.panel-collapse-toggle:hover {
-    background: var(--accent-color);
-    color: white;
-}
-
-.panel-collapse-toggle i {
-    font-size: 0.75rem;
-    color: var(--accent-color);
-    transition: color 0.2s ease;
-}
-
-.panel-collapse-toggle:hover i {
-    color: white;
-}
-
 /* Panel Content - 主内容区 */
 .panel-content {
     flex: 1;
@@ -347,29 +317,11 @@ body {
     margin: 0.5rem;
 }
 
-/* Panel Toggle Button - 紧凑 */
-.panel-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem;
-    cursor: pointer;
-    border-top: 1px solid var(--border-color);
-    transition: background-color 0.2s ease;
-}
-
-.panel-toggle:hover {
-    background: var(--accent-light);
-}
-
-.panel-toggle i {
-    font-size: 0.625rem;
-    color: var(--text-muted);
-    transition: transform 0.3s ease;
-}
-
-.data-panel.expanded .panel-toggle i {
-    transform: rotate(180deg);
+/* Data Summary - 可点击区域，增加视觉反馈 */
+.data-summary:hover {
+    background: rgba(var(--primary-rgb), 0.05);
+    border-radius: 0.5rem;
+    transition: background 0.2s ease;
 }
 
 /* Charts Container - 灵活布局支持换行 */
@@ -773,22 +725,22 @@ body {
 /* 大屏桌面 (>1440px) - 横屏 */
 @media (min-width: 1441px) and (orientation: landscape) {
     .data-panel {
-        max-width: min(40rem, 50vw) !important;
+        max-width: min(45rem, 55vw) !important;
     }
 
     .data-panel.expanded {
-        max-width: min(60rem, 50vw) !important;
+        max-width: min(70rem, 65vw) !important;
     }
 }
 
 /* 桌面/笔记本 (1025px-1440px) - 横屏 */
 @media (min-width: 1025px) and (max-width: 1440px) and (orientation: landscape) {
     .data-panel {
-        max-width: min(35rem, 50vw) !important;
+        max-width: min(38rem, 52vw) !important;
     }
 
     .data-panel.expanded {
-        max-width: min(55rem, 50vw) !important;
+        max-width: min(62rem, 60vw) !important;
     }
 
     .chart-body {
@@ -976,15 +928,6 @@ body {
 
     .data-label {
         font-size: 0.4375rem;
-    }
-
-    /* 面板展开按钮 */
-    .panel-toggle {
-        padding: 0.125rem;
-    }
-
-    .panel-toggle i {
-        font-size: 0.5rem;
     }
 
     /* 图表容器 - 固定3列 */

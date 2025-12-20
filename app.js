@@ -895,8 +895,6 @@ class DataPanel {
         this.$panel = document.getElementById('data-panel');
         this.$time = document.getElementById('data-time');
         this.$distance = document.getElementById('data-distance');
-        this.$toggle = document.getElementById('panel-toggle');
-        this.$collapseToggle = document.getElementById('panel-collapse-toggle');
         this.$chartsContainer = document.getElementById('charts-container');
 
         // 图表数值显示元素（配速/心率/海拔仅在图表区显示）
@@ -905,31 +903,19 @@ class DataPanel {
         this.$chartAltitudeValue = document.getElementById('chart-altitude-value');
 
         this.expanded = false;          // 图表区是否展开
-        this.panelCollapsed = false;    // 面板是否折叠
         this.chartManager = null;
 
-        this.setupToggle();
-    }
-
-    setupToggle() {
-        // 点击面板折叠按钮
-        this.$collapseToggle.addEventListener('click', () => this.togglePanel());
-
-        // 点击图表展开/收起按钮
-        this.$toggle.addEventListener('click', () => this.toggleExpand());
-    }
-
-    // 切换面板整体折叠状态
-    togglePanel() {
-        this.panelCollapsed = !this.panelCollapsed;
-        this.$panel.classList.toggle('collapsed', this.panelCollapsed);
-
-        // 展开时恢复默认状态（图表区折叠）
-        if (!this.panelCollapsed) {
-            this.expanded = false;
-            this.$panel.classList.remove('expanded');
-            this.$chartsContainer.classList.add('collapsed');
+        // 点击摘要区域展开/收起图表
+        const dataSummary = document.querySelector('.data-summary');
+        if (dataSummary) {
+            dataSummary.style.cursor = 'pointer';
+            dataSummary.addEventListener('click', () => this.toggleExpand());
         }
+
+        // 默认展开状态
+        this.expanded = true;
+        this.$panel.classList.add('expanded');
+        this.$chartsContainer.classList.remove('collapsed');
     }
 
     toggleExpand() {
@@ -948,8 +934,7 @@ class DataPanel {
     }
 
     update(point, currentSecond) {
-        // 面板折叠时跳过更新（性能优化）
-        if (this.panelCollapsed || !point) return;
+        if (!point) return;
 
         // 摘要区：时间、距离
         this.$time.textContent = this.formatTime(currentSecond);
