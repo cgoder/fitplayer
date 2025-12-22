@@ -83,6 +83,86 @@ const USER_STYLES = [
     { color: '#f59e0b', label: '用户 4', avatarBg: '#d97706', textColor: '#ffffff' }  // 橙色
 ];
 
+// ========================================
+// ElevationCalculator - 统一的累计爬升计算工具
+// 确保所有文件格式（FIT/TCX/GPX）使用相同的计算逻辑
+// ========================================
+const ElevationCalculator = {
+    SMOOTHING_WINDOW: 15,       // 滑动窗口大小（增加平滑度）
+    MIN_SEGMENT_GAIN: 2.0,      // 最小分段爬升阈值（米，增加以过滤 GPX 噪声）
+    ALTITUDE_PRECISION: 0.2,    // 海拔精度（米），与FIT格式一致
+
+    /**
+     * 将海拔值四舍五入到统一精度
+     * @param {number} altitude 原始海拔值
+     * @returns {number} 四舍五入后的海拔值
+     */
+    roundAltitude(altitude) {
+        if (altitude === undefined || altitude === null) return undefined;
+        return Math.round(altitude / this.ALTITUDE_PRECISION) * this.ALTITUDE_PRECISION;
+    },
+
+    /**
+     * 计算累计爬升并添加到每个点
+     * @param {Array} points 轨迹点数组，每个点需要有altitude属性
+     */
+    calculateElevationGain(points) {
+        if (!points || points.length === 0) return;
+
+        // 第一步：将所有海拔值四舍五入到统一精度
+        const altitudes = points.map(p => this.roundAltitude(p.altitude));
+
+        // 第二步：滑动窗口平滑
+        const smoothedAltitudes = [];
+        const halfWindow = Math.floor(this.SMOOTHING_WINDOW / 2);
+
+        for (let i = 0; i < points.length; i++) {
+            if (altitudes[i] === undefined) {
+                smoothedAltitudes[i] = undefined;
+                continue;
+            }
+
+            const start = Math.max(0, i - halfWindow);
+            const end = Math.min(points.length - 1, i + halfWindow);
+            let sum = 0, count = 0;
+
+            for (let j = start; j <= end; j++) {
+                if (altitudes[j] !== undefined) {
+                    sum += altitudes[j];
+                    count++;
+                }
+            }
+            smoothedAltitudes[i] = count > 0 ? sum / count : altitudes[i];
+        }
+
+        // 第三步：分段累积计算爬升
+        let cumulativeGain = 0;
+        let tempGain = 0;
+
+        points[0].elevationGain = 0;
+
+        for (let i = 1; i < points.length; i++) {
+            if (smoothedAltitudes[i] === undefined || smoothedAltitudes[i - 1] === undefined) {
+                points[i].elevationGain = cumulativeGain;
+                continue;
+            }
+
+            const diff = smoothedAltitudes[i] - smoothedAltitudes[i - 1];
+
+            if (diff > 0) {
+                tempGain += diff;
+            } else if (diff < 0) {
+                if (tempGain >= this.MIN_SEGMENT_GAIN) {
+                    cumulativeGain += tempGain;
+                }
+                tempGain = 0;
+            }
+
+            points[i].elevationGain = cumulativeGain + tempGain;
+        }
+    }
+};
+
 /**
  * 生成用户头像 SVG 图标
  * @param {number} userIndex 用户索引 (0-3)
@@ -153,6 +233,18 @@ class FitParser {
             ACTIVITY: 34,
         };
 
+        // 字段单位缩放因子
+        this.SCALES = {
+            altitude: 5,
+            speed: 1000,
+            distance: 100000,
+        };
+
+        // 字段偏移量
+        this.OFFSETS = {
+            altitude: 500,
+        };
+
         // 基准时间戳 (1989-12-31 00:00:00 UTC)
         this.FIT_EPOCH = 631065600000;
     }
@@ -161,6 +253,7 @@ class FitParser {
         try {
             const dataView = new DataView(arrayBuffer);
             const records = [];
+            this.sessions = []; // 重置会话数据
             let offset = 0;
 
             // 解析文件头
@@ -209,6 +302,9 @@ class FitParser {
 
                             if (definition.globalMessageNumber === this.MESG_NUM.RECORD) {
                                 records.push(record.data);
+                            } else if (definition.globalMessageNumber === this.MESG_NUM.SESSION) {
+                                if (!this.sessions) this.sessions = [];
+                                this.sessions.push(record.data);
                             }
                         }
                         continue;
@@ -275,6 +371,9 @@ class FitParser {
 
                         if (definition.globalMessageNumber === this.MESG_NUM.RECORD) {
                             records.push(record.data);
+                        } else if (definition.globalMessageNumber === this.MESG_NUM.SESSION) {
+                            if (!this.sessions) this.sessions = [];
+                            this.sessions.push(record.data);
                         }
                     }
                 } catch (e) {
@@ -284,7 +383,7 @@ class FitParser {
             }
 
             console.log('Parsed records:', records.length);
-            return this.processData({ records });
+            return this.processData({ records, sessions: this.sessions || [] });
 
         } catch (error) {
             console.error('FIT 解析错误:', error);
@@ -352,6 +451,20 @@ class FitParser {
                     case 78: // enhanced_altitude
                         if (value !== null && value !== 0xFFFFFFFF) {
                             data.enhanced_altitude = (value / 5) - 500;
+                        }
+                        break;
+                }
+            } else if (definition.globalMessageNumber === this.MESG_NUM.SESSION) {
+                // 解析 SESSION 消息中的字段
+                switch (field.fieldDefNum) {
+                    case 22: // total_ascent (uint16)
+                        if (value !== null && value !== 0xFFFF) {
+                            data.total_ascent = value;
+                        }
+                        break;
+                    case 23: // total_descent (uint16)
+                        if (value !== null && value !== 0xFFFF) {
+                            data.total_descent = value;
                         }
                         break;
                 }
@@ -473,6 +586,35 @@ class FitParser {
         if (points.length > 0) {
             console.log('First point:', points[0]);
             console.log('Last point:', points[points.length - 1]);
+        }
+
+        // 使用统一的累计爬升计算
+        ElevationCalculator.calculateElevationGain(points);
+
+        // 如果存在 SESSION 元数据中的 total_ascent，使用它来校准计算值
+        // 这是"Metadata First"策略的核心：设备记录的值永远是最准的
+        const session = data.sessions && data.sessions.length > 0 ? data.sessions[0] : null;
+        if (session && session.total_ascent !== undefined && session.total_ascent > 0) {
+            const calculatedTotal = points.length > 0 ? points[points.length - 1].elevationGain : 0;
+            const metadataTotal = session.total_ascent;
+
+            console.log(`Elevation Calibration: Metadata=${metadataTotal}m, Calculated=${calculatedTotal.toFixed(1)}m`);
+
+            if (calculatedTotal > 0) {
+                const ratio = metadataTotal / calculatedTotal;
+                // 校准每个点的累计爬升值
+                points.forEach(p => {
+                    if (p.elevationGain !== undefined) {
+                        p.elevationGain *= ratio;
+                    }
+                });
+            } else {
+                // 如果计算值为0但元数据有值（极罕见），强制线性分配？
+                // 暂时不做复杂处理，直接设最后一个点
+                if (points.length > 0) {
+                    points[points.length - 1].elevationGain = metadataTotal;
+                }
+            }
         }
 
         // 计算总时长
@@ -597,6 +739,9 @@ class TcxParser {
                 console.log('First point:', points[0]);
                 console.log('Last point:', points[points.length - 1]);
             }
+
+            // 使用统一的累计爬升计算
+            ElevationCalculator.calculateElevationGain(points);
 
             // 计算总时长
             const totalSeconds = points.length > 0
@@ -728,6 +873,9 @@ class GpxParser {
                 console.log('First point:', points[0]);
                 console.log('Last point:', points[points.length - 1]);
             }
+
+            // 使用统一的累计爬升计算
+            ElevationCalculator.calculateElevationGain(points);
 
             // 计算总时长
             const totalSeconds = points.length > 0
@@ -1302,7 +1450,7 @@ class DataPanel {
             const style = USER_STYLES[index] || USER_STYLES[0];
             const fileName = session.fileName || `用户 ${index + 1}`;
 
-            // 获取总时间和总距离
+            // 获取总时间、总距离和累计爬升
             const totalTime = this.formatTime(session.totalSeconds || 0);
             const lastPoint = session.points && session.points.length > 0
                 ? session.points[session.points.length - 1]
@@ -1310,6 +1458,9 @@ class DataPanel {
             const totalDistance = lastPoint && lastPoint.distance !== undefined
                 ? lastPoint.distance.toFixed(2)
                 : '0.00';
+            const totalElevationGain = lastPoint && lastPoint.elevationGain !== undefined
+                ? Math.round(lastPoint.elevationGain)
+                : 0;
 
             // 创建用户行
             const row = document.createElement('div');
@@ -1329,6 +1480,10 @@ class DataPanel {
                         <span class="stat-item">
                             <span class="stat-value" data-field="distance">${totalDistance}</span>
                             <span class="stat-unit">km</span>
+                        </span>
+                        <span class="stat-item">
+                            <span class="stat-value" data-field="elevation-gain">${totalElevationGain}</span>
+                            <span class="stat-unit">m</span>
                         </span>
                     </div>
                 </div>
@@ -1396,29 +1551,22 @@ class DataPanel {
 
         const timeEl = row.querySelector('[data-field="time"]');
         const distanceEl = row.querySelector('[data-field="distance"]');
+        const elevationGainEl = row.querySelector('[data-field="elevation-gain"]');
 
         // 如果 point 为 null，表示会话已结束，显示 0
         if (!point) {
-            if (timeEl) {
-                timeEl.textContent = '00:00:00';
-            }
-            if (distanceEl) {
-                distanceEl.textContent = '0.00';
-            }
+            if (timeEl) timeEl.textContent = '00:00:00';
+            if (distanceEl) distanceEl.textContent = '0.00';
+            if (elevationGainEl) elevationGainEl.textContent = '0';
             return;
         }
 
         const session = this.sessions[index];
         const second = session ? Math.min(currentSecond, session.totalSeconds) : currentSecond;
 
-        if (timeEl) {
-            timeEl.textContent = this.formatTime(second);
-        }
-
-        if (distanceEl) {
-            const distance = point.distance !== undefined ? point.distance.toFixed(2) : '0.00';
-            distanceEl.textContent = distance;
-        }
+        if (timeEl) timeEl.textContent = this.formatTime(second);
+        if (distanceEl) distanceEl.textContent = point.distance !== undefined ? point.distance.toFixed(2) : '0.00';
+        if (elevationGainEl) elevationGainEl.textContent = point.elevationGain !== undefined ? Math.round(point.elevationGain) : 0;
     }
 
     /**
