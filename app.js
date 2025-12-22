@@ -1349,9 +1349,9 @@ class Player {
      */
     notifyPositionChange() {
         const pointsArray = this.sessions.map(session => {
-            // 如果当前时间超过该会话的时长，返回 null（数据显示为 0）
+            // 如果当前时间超过该会话的时长，返回最后一个点（保持在终点状态）
             if (this.currentSecond >= session.totalSeconds) {
-                return null;
+                return session.indexedPoints[session.totalSeconds] || session.indexedPoints[session.indexedPoints.length - 1];
             }
             return session.indexedPoints[this.currentSecond] || null;
         });
@@ -1368,13 +1368,13 @@ class Player {
 
     /**
      * 获取所有会话的当前点
-     * 当会话已结束时，返回 null
+     * 当会话已结束时，返回最后一个点
      */
     getCurrentPoints() {
         return this.sessions.map(session => {
-            // 如果当前时间超过该会话的时长，返回 null
+            // 如果当前时间超过该会话的时长，返回最后一个点
             if (this.currentSecond >= session.totalSeconds) {
-                return null;
+                return session.indexedPoints[session.totalSeconds] || session.indexedPoints[session.indexedPoints.length - 1];
             }
             return session.indexedPoints[this.currentSecond] || null;
         });
@@ -1562,6 +1562,19 @@ class DataPanel {
         }
 
         const session = this.sessions[index];
+
+        // 智能显示策略：
+        // 1. 如果回到起点 (0秒)，显示总数据以便预览
+        // 2. 否则，随播放进度显示当前累计数据
+        if (currentSecond === 0 && session) {
+            const lastPoint = session.points && session.points.length > 0 ? session.points[session.points.length - 1] : null;
+
+            if (timeEl) timeEl.textContent = this.formatTime(session.totalSeconds || 0);
+            if (distanceEl) distanceEl.textContent = lastPoint && lastPoint.distance !== undefined ? lastPoint.distance.toFixed(2) : '0.00';
+            if (elevationGainEl) elevationGainEl.textContent = lastPoint && lastPoint.elevationGain !== undefined ? Math.round(lastPoint.elevationGain) : 0;
+            return;
+        }
+
         const second = session ? Math.min(currentSecond, session.totalSeconds) : currentSecond;
 
         if (timeEl) timeEl.textContent = this.formatTime(second);
