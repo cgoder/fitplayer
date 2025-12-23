@@ -1203,7 +1203,9 @@ class Player {
         this.totalSeconds = 0;
         this.playing = false;
         this.speed = 120;
-        this.interval = null;
+        this.speed = 120;
+        this.animationFrameId = null;
+        this.lastTime = 0;
         // 多用户支持：存储多个会话的索引点
         this.sessions = []; // [{ indexedPoints, totalSeconds, fileName }, ...]
 
@@ -1315,8 +1317,7 @@ class Player {
         console.log('[Player] play() called', {
             playing: this.playing,
             currentSecond: this.currentSecond,
-            totalSeconds: this.totalSeconds,
-            sessionsCount: this.sessions.length
+            totalSeconds: this.totalSeconds
         });
 
         if (this.playing) return;
@@ -1330,19 +1331,33 @@ class Player {
         this.onPlayStateChange(true);
         this.$btnPlay.innerHTML = '<i class="fas fa-pause"></i>';
 
-        console.log('[Player] Starting playback interval');
+        console.log('[Player] Starting playback loop (RAF)');
+        this.lastTime = performance.now();
+        this.loop();
+    }
 
-        this.interval = setInterval(() => {
-            this.currentSecond++;
+    loop() {
+        if (!this.playing) return;
 
-            if (this.currentSecond >= this.totalSeconds) {
-                this.pause();
-                return;
-            }
+        const now = performance.now();
+        const deltaTime = (now - this.lastTime) / 1000; // seconds
+        this.lastTime = now;
 
+        // 累加时间: 真实流逝时间 * 倍速
+        this.currentSecond += deltaTime * this.speed;
+
+        if (this.currentSecond >= this.totalSeconds) {
+            this.currentSecond = this.totalSeconds;
             this.updateUI();
             this.notifyPositionChange();
-        }, 1000 / this.speed);
+            this.pause();
+            return;
+        }
+
+        this.updateUI();
+        this.notifyPositionChange();
+
+        this.animationFrameId = requestAnimationFrame(() => this.loop());
     }
 
     pause() {
@@ -1351,8 +1366,10 @@ class Player {
 
         this.playing = false;
         this.onPlayStateChange(false);
-        clearInterval(this.interval);
-        this.interval = null;
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
 
         this.$btnPlay.innerHTML = '<i class="fas fa-play"></i>';
     }
@@ -1374,9 +1391,9 @@ class Player {
 
     setSpeed(speed) {
         this.speed = speed;
+        // 如果正在播放，重置 lastTime 防止速度突变导致的时间跳跃
         if (this.playing) {
-            this.pause();
-            this.play();
+            this.lastTime = performance.now();
         }
     }
 
