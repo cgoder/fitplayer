@@ -2156,8 +2156,8 @@ class VideoExporter {
             this.compositeCanvas.height = this.outputHeight;
             this.ctx = this.compositeCanvas.getContext('2d', { alpha: false }); // 优化性能
 
-            // 3. 获取 Canvas 流 (尝试 60FPS)
-            const stream = this.compositeCanvas.captureStream(60);
+            // 3. 获取 Canvas 流 (默认为 25FPS)
+            const stream = this.compositeCanvas.captureStream(25);
 
             // 4. 选择最佳 MIME 类型 (优先 MP4)
             let mimeType = 'video/webm;codecs=vp9';
@@ -2209,6 +2209,9 @@ class VideoExporter {
                 this.$btnExport.classList.add('recording');
                 this.$btnExport.innerHTML = '<i class="fas fa-stop"></i><span>停止导出</span>';
             }
+
+            // 禁用播放控制，防止干扰
+            this.toggleControls(false);
 
             console.log('[VideoExporter] Recording started');
             this.onRecordingStart();
@@ -2439,7 +2442,78 @@ class VideoExporter {
         }
 
         this.resetUI();
+        this.toggleControls(true);
         this.onRecordingStop();
+    }
+
+    toggleControls(enabled) {
+        const elements = [
+            document.getElementById('btn-play'),
+            document.getElementById('btn-begin'),
+            document.getElementById('btn-end'),
+            document.getElementById('speed-select'),
+            document.getElementById('btn-new-file'),
+            document.getElementById('landing-file-input')
+        ];
+
+        elements.forEach(el => {
+            if (el) el.disabled = !enabled;
+        });
+
+        const timeline = document.getElementById('timeline');
+        if (timeline) {
+            timeline.style.pointerEvents = enabled ? 'auto' : 'none';
+            timeline.style.opacity = enabled ? '1' : '0.5';
+        }
+
+        // 2. 处理播放控制按钮的显示/隐藏 & REC 图标
+        const playBtn = document.getElementById('btn-play');
+        const container = playBtn ? playBtn.parentNode : null;
+
+        if (container) {
+            if (!enabled) {
+                // 录制开始：隐藏播放控制，显示 REC
+                document.getElementById('btn-play').classList.add('hidden');
+                document.getElementById('btn-begin').classList.add('hidden');
+                document.getElementById('btn-end').classList.add('hidden');
+
+                let recIcon = document.getElementById('rec-indicator');
+                if (!recIcon) {
+                    recIcon = document.createElement('div');
+                    recIcon.id = 'rec-indicator';
+                    recIcon.innerHTML = '<i class="fas fa-circle" style="color: #ef4444; margin-right: 8px;"></i><span style="color: #ef4444; font-weight: bold; animation: pulse 1.5s infinite;">REC</span>';
+                    recIcon.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; background: rgba(239, 68, 68, 0.1); border-radius: 18px; border: 1px solid rgba(239, 68, 68, 0.3);';
+
+                    // 添加闪烁动画样式
+                    if (!document.getElementById('rec-style')) {
+                        const style = document.createElement('style');
+                        style.id = 'rec-style';
+                        style.textContent = `
+                            @keyframes pulse {
+                                0% { opacity: 1; }
+                                50% { opacity: 0.5; }
+                                100% { opacity: 1; }
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
+
+                    // 插入到播放按钮位置
+                    container.insertBefore(recIcon, playBtn);
+                }
+                recIcon.classList.remove('hidden');
+            } else {
+                // 录制结束：恢复播放控制，隐藏 REC
+                document.getElementById('btn-play').classList.remove('hidden');
+                document.getElementById('btn-begin').classList.remove('hidden');
+                document.getElementById('btn-end').classList.remove('hidden');
+
+                const recIcon = document.getElementById('rec-indicator');
+                if (recIcon) {
+                    recIcon.classList.add('hidden');
+                }
+            }
+        }
     }
 
     async exportVideo(mimeType) {
@@ -2474,7 +2548,7 @@ class VideoExporter {
                 const writable = await handle.createWritable();
                 await writable.write(blob);
                 await writable.close();
-                alert(`视频已保存!\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+                console.log(`视频已保存!\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
                 return;
             } catch (e) {
                 if (e.name !== 'AbortError') console.warn(e);
@@ -2495,8 +2569,7 @@ class VideoExporter {
             URL.revokeObjectURL(url);
         }, 1000);
 
-        // 只有在使用 Blob URL 下载时才提示，File System API 不需要
-        alert(`视频已下载: ${filename}`);
+        console.log(`视频已下载: ${filename}`);
     }
 
     resetUI() {
@@ -2539,10 +2612,10 @@ class App {
             },
             onTimeUpdate: (current, total) => {
                 // 如果正在录制且播放结束，自动停止录制
-                if (this.screenRecorder && this.screenRecorder.isRecording) {
+                if (this.videoExporter && this.videoExporter.isRecording) {
                     if (current >= total && total > 0) {
                         console.log('[App] Playback finished, auto-stopping recording');
-                        this.screenRecorder.stop();
+                        this.videoExporter.stop();
                     }
                 }
             },
