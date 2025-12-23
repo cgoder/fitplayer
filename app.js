@@ -1095,6 +1095,8 @@ class MapRenderer {
     updateMarkerPositions(pointsArray) {
         if (!this.map) return;
 
+        // 1. 更新位置并收集屏幕坐标
+        const markersWithPixels = [];
         pointsArray.forEach((point, index) => {
             const session = this.sessions[index];
             if (!session || !session.marker || !point) return;
@@ -1102,6 +1104,65 @@ class MapRenderer {
             // 使用已转换的 GCJ-02 坐标
             const position = [point.lng, point.lat];
             session.marker.setPosition(position);
+            session.marker.show(); // 确保显示
+
+            // 计算屏幕像素坐标用于碰撞检测
+            const pixel = this.map.lngLatToContainer(position);
+            markersWithPixels.push({
+                index: index,
+                marker: session.marker,
+                pixel: pixel
+            });
+        });
+
+        // 2. 碰撞检测和偏移处理
+        const threshold = 15; // 降低阈值，只处理紧密重叠的情况
+        const visited = new Set();
+
+        markersWithPixels.forEach((item, i) => {
+            if (visited.has(i)) return;
+
+            const cluster = [item];
+            visited.add(i);
+
+            // 查找所有重叠的标记
+            for (let j = i + 1; j < markersWithPixels.length; j++) {
+                if (visited.has(j)) continue;
+
+                const other = markersWithPixels[j];
+                const dx = item.pixel.x - other.pixel.x;
+                const dy = item.pixel.y - other.pixel.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < threshold) {
+                    cluster.push(other);
+                    visited.add(j);
+                }
+            }
+
+            // 对重叠的标记组应用偏移 (堆叠效果)
+            if (cluster.length > 1) {
+                // 按索引排序，保证层级稳定 (User 1 在下, User 4 在上)
+                cluster.sort((a, b) => a.index - b.index);
+
+                // 堆叠偏移策略 (每个错开一点点)
+                const offsetStep = 6;
+
+                cluster.forEach((clusterItem, k) => {
+                    // 向右上方轻微偏移，制造层叠感，同时保持在轨迹附近
+                    const shiftX = k * offsetStep;
+                    const shiftY = k * -offsetStep; // 负值向上
+
+                    // 基础偏移是 (-18, -18) 对应 36x36 图标的中心
+                    clusterItem.marker.setOffset(new AMap.Pixel(-18 + shiftX, -18 + shiftY));
+                    // 必须提高重叠标记的层级，确保顺序正确
+                    clusterItem.marker.setzIndex(200 + k);
+                });
+            } else {
+                // 无重叠，恢复默认偏移
+                item.marker.setOffset(new AMap.Pixel(-18, -18));
+                item.marker.setzIndex(100 + item.index);
+            }
         });
     }
 
@@ -2217,39 +2278,97 @@ class VideoExporter {
 
         const currentSecond = this.player.currentSecond;
         const dpr = window.devicePixelRatio || 1;
-        // 计算缩放比例:  目标宽度 / (源宽度) 
-        // 源宽度 (mapCanvas.width) = containerWidth * dpr
-        // 所以 scale = mapDrawWidth / mapCanvas.width
+        // 计算缩放比例
         const scale = mapDrawWidth / mapSourceWidth;
 
+        // 1. 收集所有需要绘制的头像信息
+        const avatarsToDraw = [];
         this.sessions.forEach((session, index) => {
-            // 找到当前位置
             const point = this.findPointAtTime(session.points, currentSecond);
             if (point) {
-                // 将经纬度转换为容器像素坐标 (Container CSS Pixels)
                 const pixel = this.mapRenderer.map.lngLatToContainer([point.lng, point.lat]);
 
                 // 转换为 Canvas 坐标
-                // 原始 Canvas 上的位置 = pixel * dpr
-                // 绘制 Canvas 上的位置 = (pixel * dpr) * scale + offset
                 const x = mapX + (pixel.x * dpr) * scale;
                 const y = mapY + (pixel.y * dpr) * scale;
 
-                // 绘制 Avatar 点
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, 8, 0, Math.PI * 2);
-
-                // 颜色 (使用预定义颜色或随机颜色)
-                const colors = ['#ff4d4f', '#1890ff', '#52c41a', '#faad14'];
-                this.ctx.fillStyle = colors[index % colors.length];
-                this.ctx.fill();
-
-                // 白色边框
-                this.ctx.strokeStyle = '#ffffff';
-                this.ctx.lineWidth = 3;
-                this.ctx.stroke();
+                avatarsToDraw.push({ index, x, y, originalX: x });
             }
         });
+
+        // 2. 碰撞检测和偏移处理 (与 MapRenderer 保持一致)
+        // 2. 碰撞检测和偏移处理 (与 MapRenderer 保持一致)
+        const threshold = 15 * scale * dpr; // 降低阈值
+        const visited = new Set();
+
+        avatarsToDraw.forEach((item, i) => {
+            if (visited.has(i)) return;
+
+            const cluster = [item];
+            visited.add(i);
+
+            for (let j = i + 1; j < avatarsToDraw.length; j++) {
+                if (visited.has(j)) continue;
+
+                const other = avatarsToDraw[j];
+                const dx = item.x - other.x;
+                const dy = item.y - other.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < threshold) {
+                    cluster.push(other);
+                    visited.add(j);
+                }
+            }
+
+            if (cluster.length > 1) {
+                // 按索引排序 (User 1 在下, User 4 在上)
+                cluster.sort((a, b) => a.index - b.index);
+
+                const offsetStep = 6 * scale * dpr;
+
+                cluster.forEach((clusterItem, k) => {
+                    // 堆叠偏移
+                    clusterItem.offsetX = k * offsetStep;
+                    clusterItem.offsetY = k * -offsetStep;
+                });
+            } else {
+                item.offsetX = 0;
+                item.offsetY = 0;
+            }
+        });
+
+        // 3. 绘制头像
+        avatarsToDraw.forEach(item => {
+            // 注意绘制顺序：已经排好序了，直接画，后面的会盖住前面的
+            this.drawAvatar(item.x + (item.offsetX || 0), item.y + (item.offsetY || 0), item.index, scale * dpr);
+        });
+    }
+
+    drawAvatar(x, y, index, scale) {
+        const style = USER_STYLES[index] || USER_STYLES[0];
+        const label = index + 1;
+        const baseSize = 36; // 基础尺寸
+        const radius = (baseSize / 2) * scale; // 缩放后的半径
+
+        // 绘制背景圆
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+        this.ctx.fillStyle = style.avatarBg;
+        this.ctx.fill();
+
+        // 绘制白边
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 2 * scale;
+        this.ctx.stroke();
+
+        // 绘制数字
+        this.ctx.fillStyle = style.textColor;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        // 字体大小调整
+        this.ctx.font = `bold ${baseSize * 0.45 * scale}px Inter, sans-serif`;
+        this.ctx.fillText(label.toString(), x, y + (2 * scale));
     }
 
     // 简单的二分查找
