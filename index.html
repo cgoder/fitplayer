@@ -108,16 +108,8 @@
                 <button id="theme-toggle" class="btn-icon" title="切换主题">
                     <i class="fas fa-moon"></i>
                 </button>
-                <div class="menu-container">
-                    <button id="btn-menu" class="btn-icon" title="菜单">
-                        <i class="fas fa-ellipsis-v"></i>
-                    </button>
-                    <div id="menu-dropdown" class="menu-dropdown hidden">
-                        <button id="btn-export-mp4" class="menu-item">
-                            <i class="fas fa-video"></i>
-                            <span>导出视频</span>
-                        </button>
-                    </div>
+                <div class="menu-container hidden">
+                    <!-- Menu removed as per design -->
                 </div>
             </div>
         </header>
@@ -287,6 +279,13 @@
                             <option value="180">180x</option>
                             <option value="240">240x</option>
                         </select>
+                    </div>
+
+                    <!-- 录制按钮 -->
+                    <div class="record-control">
+                        <button id="btn-record" class="btn-icon" title="录制视频">
+                            <i class="fas fa-circle"></i>
+                        </button>
                     </div>
 
                 </div>

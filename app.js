@@ -2080,41 +2080,22 @@ class VideoExporter {
         this.onRecordingStop = options.onRecordingStop || (() => { });
         this.onError = options.onError || ((err) => console.error('[VideoExporter] Error:', err));
 
-        // 菜单元素
-        this.$btnMenu = document.getElementById('btn-menu');
-        this.$menuDropdown = document.getElementById('menu-dropdown');
-        this.$btnExport = document.getElementById('btn-export-mp4');
+        // 菜单元素 (Removed)
+        // this.$btnExport = document.getElementById('btn-export-mp4'); // Removed
 
         this.initControls();
     }
 
     initControls() {
-        // 菜单按钮点击 - 切换下拉菜单
-        if (this.$btnMenu && this.$menuDropdown) {
-            this.$btnMenu.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.$menuDropdown.classList.toggle('hidden');
-            });
-
-            // 点击其他地方关闭菜单
-            document.addEventListener('click', (e) => {
-                if (!this.$menuDropdown.contains(e.target) && e.target !== this.$btnMenu) {
-                    this.$menuDropdown.classList.add('hidden');
-                }
-            });
-        }
-
-        // 导出按钮点击
-        if (this.$btnExport) {
-            this.$btnExport.addEventListener('click', () => {
-                // 关闭菜单
-                if (this.$menuDropdown) {
-                    this.$menuDropdown.classList.add('hidden');
-                }
-
+        // 录制按钮点击
+        this.$btnRecord = document.getElementById('btn-record');
+        if (this.$btnRecord) {
+            this.$btnRecord.addEventListener('click', () => {
                 if (this.isRecording) {
+                    // 如果正在录制，点击则是停止
                     this.stop();
                 } else {
+                    // 开始录制
                     this.start();
                 }
             });
@@ -2204,11 +2185,7 @@ class VideoExporter {
             this.mediaRecorder.start();
             this.isRecording = true;
 
-            // 更新 UI
-            if (this.$btnExport) {
-                this.$btnExport.classList.add('recording');
-                this.$btnExport.innerHTML = '<i class="fas fa-stop"></i><span>停止导出</span>';
-            }
+            // UI update handled by toggleControls(false) below
 
             // 禁用播放控制，防止干扰
             this.toggleControls(false);
@@ -2466,7 +2443,32 @@ class VideoExporter {
             timeline.style.opacity = enabled ? '1' : '0.5';
         }
 
-        // 2. 处理播放控制按钮的显示/隐藏 & REC 图标
+        // 2. 切换播放控制的可见性
+        const controlsToHide = [
+            document.getElementById('btn-play'),
+            document.getElementById('btn-begin'),
+            document.getElementById('btn-end'),
+            document.querySelector('.speed-control')
+        ];
+
+        controlsToHide.forEach(el => {
+            if (el) {
+                if (!enabled) el.classList.add('hidden');
+                else el.classList.remove('hidden');
+            }
+        });
+
+        // 3. 更新 REC 按钮状态
+        if (this.$btnRecord) {
+            if (!enabled) {
+                this.$btnRecord.classList.add('recording');
+                this.$btnRecord.innerHTML = '<i class="fas fa-square"></i>';
+            } else {
+                this.$btnRecord.classList.remove('recording');
+                this.$btnRecord.innerHTML = '<i class="fas fa-circle"></i>';
+            }
+        }
+    /*
         const playBtn = document.getElementById('btn-play');
         const container = playBtn ? playBtn.parentNode : null;
 
@@ -2514,7 +2516,7 @@ class VideoExporter {
                 }
             }
         }
-    }
+    */ }
 
     async exportVideo(mimeType) {
         if (this.recordedChunks.length === 0) {
@@ -2549,6 +2551,7 @@ class VideoExporter {
                 await writable.write(blob);
                 await writable.close();
                 console.log(`视频已保存!\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+                alert(`视频已保存成功!\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
                 return;
             } catch (e) {
                 if (e.name !== 'AbortError') console.warn(e);
@@ -2569,14 +2572,13 @@ class VideoExporter {
             URL.revokeObjectURL(url);
         }, 1000);
 
+        // 只有在使用 Blob URL 下载时才提示，File System API 不需要
         console.log(`视频已下载: ${filename}`);
+        alert(`视频已导出!\n文件: ${filename}`);
     }
 
     resetUI() {
-        if (this.$btnExport) {
-            this.$btnExport.classList.remove('recording');
-            this.$btnExport.innerHTML = '<i class="fas fa-video"></i><span>导出视频</span>';
-        }
+        // UI reset is now handled in toggleControls via remove('recording')
     }
 }
 
@@ -2613,7 +2615,8 @@ class App {
             onTimeUpdate: (current, total) => {
                 // 如果正在录制且播放结束，自动停止录制
                 if (this.videoExporter && this.videoExporter.isRecording) {
-                    if (current >= total && total > 0) {
+                    // 放宽结束判定条件，确保触发 (total - 0.5s)
+                    if (current >= (total - 0.5) && total > 0) {
                         console.log('[App] Playback finished, auto-stopping recording');
                         this.videoExporter.stop();
                     }

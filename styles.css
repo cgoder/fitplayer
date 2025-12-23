@@ -63,6 +63,13 @@ body {
 }
 
 /* ========================================
+   Utility Classes
+   ======================================== */
+.hidden {
+    display: none !important;
+}
+
+/* ========================================
    Layout
    ======================================== */
 .app-container {
@@ -755,17 +762,40 @@ body {
     border-left: 1px solid var(--border-color);
 }
 
-.btn-icon.recording {
+#btn-record {
+    color: var(--danger-color);
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+#btn-record:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--danger-color);
+}
+
+#btn-record.recording {
     background: var(--danger-color);
     border-color: var(--danger-color);
     color: white;
     animation: pulse 1.5s infinite;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2);
 }
 
-.btn-icon.recording:hover {
-    background: #dc2626;
-    border-color: #dc2626;
-    color: white;
+@keyframes pulse {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: scale(1.05);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 /* ========================================
