@@ -1061,15 +1061,11 @@ class MapRenderer {
             });
             this.map.add(endMarker);
 
-            // 当前位置标记（带编号的头像）
+            // 当前位置标记（使用 HTML 内容，包含头像和数据徽章）
             const marker = new AMap.Marker({
                 position: path[0],
-                icon: new AMap.Icon({
-                    size: new AMap.Size(36, 36),
-                    image: generateAvatarIcon(index, 36),
-                    imageSize: new AMap.Size(36, 36),
-                }),
-                offset: new AMap.Pixel(-18, -18),
+                content: this.createAvatarContent(index, style),
+                offset: new AMap.Pixel(-18, -40), // 调整偏移以适应上方徽章
                 zIndex: 100 + index,
             });
             this.map.add(marker);
@@ -1089,6 +1085,29 @@ class MapRenderer {
     }
 
     /**
+     * 创建头像 HTML 内容（包含数据徽章）
+     * @param {number} userIndex 用户索引
+     * @param {Object} style 用户样式
+     * @returns {string} HTML 字符串
+     */
+    createAvatarContent(userIndex, style) {
+        const label = userIndex + 1;
+        // 单个徽章包含心率+配速，位置由 data-position 控制（默认下方）
+        return `
+            <div class="avatar-marker-container" id="avatar-marker-${userIndex}" data-theme-color="${style.color}" data-position="bottom">
+                <div class="stat-badge" style="background-color: ${style.color};">
+                    <span class="hr-data"><span class="icon">❤️</span><span class="value hr-value">--</span></span>
+                    <span class="separator">·</span>
+                    <span class="pace-data"><span class="icon">⚡</span><span class="value pace-value">--</span></span>
+                </div>
+                <svg class="avatar-svg" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="16" fill="${style.avatarBg}" stroke="white" stroke-width="2"/>
+                    <text x="18" y="23" text-anchor="middle" fill="${style.textColor}" font-size="14" font-weight="bold" font-family="Inter, sans-serif">${label}</text>
+                </svg>
+            </div>
+        `;
+    }
+    /**
      * 更新多个会话的标记位置
      * @param {Array} pointsArray - 各会话当前点位数组 [point1, point2, ...]
      */
@@ -1106,17 +1125,68 @@ class MapRenderer {
             session.marker.setPosition(position);
             session.marker.show(); // 确保显示
 
+            // 更新徽章数据 (DOM 操作) - 单个组合徽章
+            const container = document.getElementById(`avatar-marker-${index}`);
+            if (container) {
+                const badge = container.querySelector('.stat-badge');
+                if (badge) {
+                    // 更新心率
+                    const hrValue = container.querySelector('.hr-value');
+                    const hrData = container.querySelector('.hr-data');
+                    if (hrValue && hrData) {
+                        if (point.heart_rate && point.heart_rate > 0) {
+                            hrValue.textContent = point.heart_rate;
+                            hrData.style.display = 'inline-flex';
+                        } else {
+                            hrData.style.display = 'none';
+                        }
+                    }
+
+                    // 更新配速
+                    const paceValue = container.querySelector('.pace-value');
+                    const paceData = container.querySelector('.pace-data');
+                    const speedKmh = point.speed || point.enhanced_speed || 0;
+                    if (paceValue && paceData) {
+                        if (speedKmh > 0) {
+                            if (speedKmh < 30) {
+                                const pace = 60 / speedKmh;
+                                const min = Math.floor(pace);
+                                const sec = Math.floor((pace - min) * 60);
+                                paceValue.textContent = `${min}'${sec.toString().padStart(2, '0')}"`;
+                            } else {
+                                paceValue.textContent = `${speedKmh.toFixed(1)}`;
+                            }
+                            paceData.style.display = 'inline-flex';
+                        } else {
+                            paceData.style.display = 'none';
+                        }
+                    }
+
+                    // 更新分隔符显示
+                    const separator = container.querySelector('.separator');
+                    const hasHr = point.heart_rate && point.heart_rate > 0;
+                    const hasPace = speedKmh > 0;
+                    if (separator) {
+                        separator.style.display = (hasHr && hasPace) ? 'inline' : 'none';
+                    }
+
+                    // 显示/隐藏整个徽章
+                    badge.style.display = (hasHr || hasPace) ? 'flex' : 'none';
+                }
+            }
+
             // 计算屏幕像素坐标用于碰撞检测
             const pixel = this.map.lngLatToContainer(position);
             markersWithPixels.push({
                 index: index,
                 marker: session.marker,
-                pixel: pixel
+                pixel: pixel,
+                container: container
             });
         });
 
-        // 2. 碰撞检测和偏移处理
-        const threshold = 15; // 降低阈值，只处理紧密重叠的情况
+        // 2. 碰撞检测和垂直堆叠处理 (用户头像保持在轨迹上，数据垂直堆叠)
+        const threshold = 40; // 检测阈值
         const visited = new Set();
 
         markersWithPixels.forEach((item, i) => {
@@ -1140,27 +1210,48 @@ class MapRenderer {
                 }
             }
 
-            // 对重叠的标记组应用偏移 (堆叠效果)
+            // 对重叠的标记组应用堆叠处理:
+            // 1. 头像做轻微偏移确保都可见
+            // 2. 数据垂直堆叠，用颜色区分用户
+            // 3. 根据Y坐标决定数据显示在上方还是下方
             if (cluster.length > 1) {
-                // 按索引排序，保证层级稳定 (User 1 在下, User 4 在上)
-                cluster.sort((a, b) => a.index - b.index);
+                // 按 Y 坐标排序 (Y 小的在前 = 屏幕上方)
+                cluster.sort((a, b) => a.pixel.y - b.pixel.y);
 
-                // 堆叠偏移策略 (每个错开一点点)
-                const offsetStep = 6;
+                const offsetStep = 8; // 每个用户头像偏移量
+                const midIndex = Math.floor(cluster.length / 2);
+
+                // 计算每个方向的局部堆叠计数
+                let topCount = 0;
+                let bottomCount = 0;
 
                 cluster.forEach((clusterItem, k) => {
-                    // 向右上方轻微偏移，制造层叠感，同时保持在轨迹附近
-                    const shiftX = k * offsetStep;
-                    const shiftY = k * -offsetStep; // 负值向上
+                    if (clusterItem.container) {
+                        // 头像稍微偏移，确保都能看到
+                        const shiftX = k * offsetStep;
+                        const shiftY = k * -offsetStep;
+                        clusterItem.container.style.transform = `translate(${shiftX}px, ${shiftY}px)`;
 
-                    // 基础偏移是 (-18, -18) 对应 36x36 图标的中心
-                    clusterItem.marker.setOffset(new AMap.Pixel(-18 + shiftX, -18 + shiftY));
-                    // 必须提高重叠标记的层级，确保顺序正确
+                        // 智能定位
+                        const isTopHalf = k < midIndex;
+                        clusterItem.container.setAttribute('data-position', isTopHalf ? 'top' : 'bottom');
+
+                        // 设置局部堆叠索引（同方向内的索引）
+                        clusterItem.container.classList.add('stacked');
+                        const localStackIndex = isTopHalf ? topCount++ : bottomCount++;
+                        clusterItem.container.style.setProperty('--stack-index', localStackIndex);
+                    }
+                    // Z-index 控制层叠顺序 (后面的在上面)
                     clusterItem.marker.setzIndex(200 + k);
                 });
             } else {
-                // 无重叠，恢复默认偏移
-                item.marker.setOffset(new AMap.Pixel(-18, -18));
+                // 无重叠，恢复默认 (数据显示在下方)
+                if (item.container) {
+                    item.container.classList.remove('stacked');
+                    item.container.style.removeProperty('--stack-index');
+                    item.container.style.transform = '';
+                    item.container.setAttribute('data-position', 'bottom');
+                }
                 item.marker.setzIndex(100 + item.index);
             }
         });
@@ -1426,12 +1517,15 @@ class Player {
      * 当会话已结束时，返回 null 以表示数据应显示为 0
      */
     notifyPositionChange() {
+        // 关键修复：必须取整才能作为数组下标
+        const secondIndex = Math.floor(this.currentSecond);
+
         const pointsArray = this.sessions.map(session => {
             // 如果当前时间超过该会话的时长，返回最后一个点（保持在终点状态）
-            if (this.currentSecond >= session.totalSeconds) {
+            if (secondIndex >= session.totalSeconds) {
                 return session.indexedPoints[session.totalSeconds] || session.indexedPoints[session.indexedPoints.length - 1];
             }
-            return session.indexedPoints[this.currentSecond] || null;
+            return session.indexedPoints[secondIndex] || null;
         });
 
         this.onPositionChange(pointsArray, this.currentSecond);
@@ -2289,13 +2383,32 @@ class VideoExporter {
                 const x = mapX + (pixel.x * dpr) * scale;
                 const y = mapY + (pixel.y * dpr) * scale;
 
-                avatarsToDraw.push({ index, x, y, originalX: x });
+                // 收集心率和配速数据
+                let hrText = null;
+                let speedText = null;
+
+                if (point.heart_rate && point.heart_rate > 0) {
+                    hrText = point.heart_rate.toString();
+                }
+
+                const speedKmh = point.speed || point.enhanced_speed || 0;
+                if (speedKmh > 0) {
+                    if (speedKmh < 30) {
+                        const pace = 60 / speedKmh;
+                        const min = Math.floor(pace);
+                        const sec = Math.floor((pace - min) * 60);
+                        speedText = `${min}'${sec.toString().padStart(2, '0')}"`;
+                    } else {
+                        speedText = `${speedKmh.toFixed(1)}`;
+                    }
+                }
+
+                avatarsToDraw.push({ index, x, y, hrText, speedText });
             }
         });
 
-        // 2. 碰撞检测和偏移处理 (与 MapRenderer 保持一致)
-        // 2. 碰撞检测和偏移处理 (与 MapRenderer 保持一致)
-        const threshold = 15 * scale * dpr; // 降低阈值
+        // 2. 碰撞检测和偏移处理 (与 MapRenderer 保持一致 - Fan-out)
+        const threshold = 50 * scale * dpr;
         const visited = new Set();
 
         avatarsToDraw.forEach((item, i) => {
@@ -2319,26 +2432,99 @@ class VideoExporter {
             }
 
             if (cluster.length > 1) {
-                // 按索引排序 (User 1 在下, User 4 在上)
+                // 堆叠处理：头像轻微偏移 + 数据垂直堆叠
                 cluster.sort((a, b) => a.index - b.index);
 
-                const offsetStep = 6 * scale * dpr;
+                const offsetStep = 8 * scale * dpr; // 每个用户头像偏移量
 
                 cluster.forEach((clusterItem, k) => {
-                    // 堆叠偏移
                     clusterItem.offsetX = k * offsetStep;
                     clusterItem.offsetY = k * -offsetStep;
+                    clusterItem.stackIndex = k; // 用于徽章垂直堆叠
                 });
             } else {
                 item.offsetX = 0;
                 item.offsetY = 0;
+                item.stackIndex = 0;
             }
         });
 
-        // 3. 绘制头像
-        avatarsToDraw.forEach(item => {
-            // 注意绘制顺序：已经排好序了，直接画，后面的会盖住前面的
-            this.drawAvatar(item.x + (item.offsetX || 0), item.y + (item.offsetY || 0), item.index, scale * dpr);
+        // 3. 绘制头像和徽章
+        // 首先按 Y 排序，然后决定每个用户的徽章位置
+        avatarsToDraw.sort((a, b) => a.y - b.y);
+        const midIndex = Math.floor(avatarsToDraw.length / 2);
+
+        avatarsToDraw.forEach((item, idx) => {
+            const x = item.x + (item.offsetX || 0);
+            const y = item.y + (item.offsetY || 0);
+            const style = USER_STYLES[item.index] || USER_STYLES[0];
+            const scaledDpr = scale * dpr;
+
+            // 绘制 Avatar
+            this.drawAvatar(x, y, item.index, scaledDpr);
+
+            // 绘制组合徽章 (心率 + 配速)
+            const hasHr = item.hrText && item.hrText !== '--';
+            const hasPace = item.speedText && item.speedText !== '--';
+            if (!hasHr && !hasPace) return;
+
+            // 构建徽章文本
+            let badgeText = '';
+            if (hasHr && hasPace) {
+                badgeText = `❤️ ${item.hrText} · ⚡ ${item.speedText}`;
+            } else if (hasHr) {
+                badgeText = `❤️ ${item.hrText}`;
+            } else {
+                badgeText = `⚡ ${item.speedText}`;
+            }
+
+            const fontSize = 11 * scaledDpr;
+            this.ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+            const paddingX = 10 * scaledDpr;
+            const paddingY = 3 * scaledDpr;
+
+            const textWidth = this.ctx.measureText(badgeText).width;
+            const badgeWidth = textWidth + paddingX * 2;
+            const badgeHeight = fontSize * 1.3 + paddingY * 2;
+
+            const badgeX = x - badgeWidth / 2;
+            const avatarRadius = 18 * scaledDpr;
+            const gap = 2 * scaledDpr;
+
+            // 智能定位：上半部分用户数据显示在上方，下半部分显示在下方
+            const isTopHalf = idx < midIndex;
+
+            // 计算同方向内的堆叠索引（不是全局索引）
+            // 上方组: idx 0,1,2... → 堆叠索引 0,1,2...
+            // 下方组: idx mid, mid+1... → 堆叠索引 0,1,2...
+            const localStackIndex = isTopHalf ? idx : (idx - midIndex);
+            const stackOffset = localStackIndex * 22 * scaledDpr;
+
+            let badgeY;
+            if (isTopHalf) {
+                badgeY = y - avatarRadius - gap - badgeHeight - stackOffset;
+            } else {
+                badgeY = y + avatarRadius + gap + stackOffset;
+            }
+
+            // 绘制背景 (使用用户主题色，75% 透明度)
+            this.ctx.beginPath();
+            const borderRadius = 14 * scaledDpr;
+            if (this.ctx.roundRect) {
+                this.ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, borderRadius);
+            } else {
+                this.ctx.rect(badgeX, badgeY, badgeWidth, badgeHeight);
+            }
+            this.ctx.fillStyle = style.color;
+            this.ctx.globalAlpha = 0.75;
+            this.ctx.fill();
+            this.ctx.globalAlpha = 1.0;
+
+            // 绘制文字 (白色)
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(badgeText, badgeX + paddingX, badgeY + badgeHeight / 2);
         });
     }
 

@@ -1274,3 +1274,71 @@ body {
         padding: 0.25rem;
     }
 }
+
+/* ========================================
+   Avatar Overlay - Combined Badge Design
+   ======================================== */
+/* 单个组合徽章 - 包含心率和配速 */
+.avatar-marker-container .stat-badge {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    /* 由 JS 控制显示 */
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    white-space: nowrap;
+    opacity: 0.75;
+    /* 更透明，可见地图 */
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    z-index: 10;
+}
+
+/* 默认位置：下方 */
+.avatar-marker-container[data-position="bottom"] .stat-badge {
+    top: calc(100% + 2px);
+}
+
+/* 上方位置 */
+.avatar-marker-container[data-position="top"] .stat-badge {
+    bottom: calc(100% + 2px);
+}
+
+/* 心率和配速数据样式 */
+.avatar-marker-container .stat-badge .hr-data,
+.avatar-marker-container .stat-badge .pace-data {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* 值文字白色 */
+.avatar-marker-container .stat-badge .value {
+    color: white !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* 分隔符 */
+.avatar-marker-container .stat-badge .separator {
+    color: rgba(255, 255, 255, 0.6);
+    margin: 0 2px;
+}
+
+/* 图标样式 */
+.avatar-marker-container .stat-badge .icon {
+    font-size: 10px;
+}
+
+/* 堆叠模式 - 垂直偏移 */
+.avatar-marker-container.stacked[data-position="bottom"] .stat-badge {
+    top: calc(100% + 2px + var(--stack-index, 0) * 22px);
+}
+
+.avatar-marker-container.stacked[data-position="top"] .stat-badge {
+    bottom: calc(100% + 2px + var(--stack-index, 0) * 22px);
+}
