@@ -1,4 +1,5 @@
 .DS_Store
 *.fit
 .apikey
-node_modules.ai_memory
+node_modules
+.ai_memory
