@@ -931,6 +931,265 @@ class GpxParser {
 }
 
 // ========================================
+// KML Parser - KML 文件解析器 (增强版)
+// ========================================
+class KmlParser {
+    async parse(arrayBuffer) {
+        try {
+            const text = new TextDecoder('utf-8').decode(arrayBuffer);
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(text, 'text/xml');
+
+            const parseError = doc.querySelector('parsererror');
+            if (parseError) {
+                throw new Error('无效的 KML 文件格式');
+            }
+
+            let points = [];
+
+            // 策略 1: 尝试解析带时间戳的轨迹 (gx:Track 或 Track)
+            // 这是最佳情况，包含真实的时间信息
+            points = this.parseTrack(doc);
+
+            // 策略 2: 如果没有时间戳轨迹，尝试解析 LineString
+            // 这是一个降级方案，我们将生成模拟时间戳以便回放
+            if (points.length === 0) {
+                points = this.parseLineString(doc);
+                if (points.length > 0) {
+                    console.warn('KML: 未找到时间戳，已启用 LineString 模拟模式');
+                }
+            }
+
+            if (points.length === 0) {
+                throw new Error('KML 文件中未找到有效的轨迹数据 (Track 或 LineString)');
+            }
+
+            console.log('KML - Valid points:', points.length);
+
+            // 使用统一的累计爬升计算
+            ElevationCalculator.calculateElevationGain(points);
+
+            // 计算总时长
+            const totalSeconds = points.length > 0
+                ? Math.max(...points.map(p => p.elapsed_time || 0))
+                : 0;
+
+            // 创建索引点
+            const indexedPoints = this.createIndexedPoints(points, totalSeconds);
+
+            return {
+                points,
+                indexedPoints,
+                totalSeconds: Math.ceil(totalSeconds),
+                startTime: points[0]?.timestamp || new Date(),
+                endTime: points[points.length - 1]?.timestamp || new Date(),
+                summary: {},
+            };
+
+        } catch (error) {
+            console.error('KML 解析错误:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 解析 gx:Track 或 Track 元素 (包含 when 和 coord/gx:coord)
+     */
+    parseTrack(doc) {
+        const points = [];
+        const tracks = this.getElementsByLocalName(doc, 'Track');
+        
+        let startTime = null;
+        let totalDistance = 0;
+        let prevPoint = null;
+
+        tracks.forEach((track) => {
+            const whens = this.getElementsByLocalName(track, 'when');
+            // 同时查找 coord (通常空格分隔) 和 gx:coord
+            let coords = this.getElementsByLocalName(track, 'coord');
+            if (coords.length === 0) {
+                 // 尝试带前缀的查找，虽然 getElementsByLocalName 应该已经覆盖
+                 // 但有些结构可能不同，保持现状
+            }
+
+            // 确保时间和坐标数量匹配
+            const count = Math.min(whens.length, coords.length);
+
+            for (let i = 0; i < count; i++) {
+                const timeStr = whens[i].textContent;
+                // gx:coord 格式通常是: lon lat alt (空格分隔)
+                const coordText = coords[i].textContent.trim();
+                const coordParts = coordText.split(/\s+/);
+
+                if (coordParts.length < 2) continue;
+
+                const lng = parseFloat(coordParts[0]);
+                const lat = parseFloat(coordParts[1]);
+                const alt = coordParts.length > 2 ? parseFloat(coordParts[2]) : undefined;
+
+                if (isNaN(lat) || isNaN(lng)) continue;
+
+                const timestamp = new Date(timeStr);
+                if (!startTime) startTime = timestamp;
+
+                // 计算 elapsed_time
+                const elapsed_time = (startTime && timestamp)
+                    ? (timestamp.getTime() - startTime.getTime()) / 1000
+                    : points.length;
+
+                // WGS-84 转 GCJ-02
+                const gcj02 = CoordTransform.wgs84ToGcj02(lng, lat);
+
+                // 计算距离
+                if (prevPoint) {
+                    const dist = this.haversineDistance(prevPoint.wgs84_lat, prevPoint.wgs84_lng, lat, lng);
+                    totalDistance += dist;
+                }
+
+                // 计算速度
+                let speed = null;
+                if (prevPoint && timestamp && prevPoint.timestamp) {
+                    const timeDiff = (timestamp.getTime() - prevPoint.timestamp.getTime()) / 1000;
+                    if (timeDiff > 0) {
+                        const dist = this.haversineDistance(prevPoint.wgs84_lat, prevPoint.wgs84_lng, lat, lng);
+                        speed = (dist / timeDiff) * 3.6; // km/h
+                    }
+                }
+
+                const point = {
+                    index: points.length,
+                    lat: gcj02.lat,
+                    lng: gcj02.lng,
+                    wgs84_lat: lat,
+                    wgs84_lng: lng,
+                    timestamp,
+                    elapsed_time,
+                    speed,
+                    altitude: alt,
+                    distance: totalDistance / 1000,
+                };
+
+                points.push(point);
+                prevPoint = point;
+            }
+        });
+
+        return points;
+    }
+
+    /**
+     * 解析 LineString (Coordinates 逗号分隔，无时间戳)
+     * 生成模拟时间戳
+     */
+    parseLineString(doc) {
+        const points = [];
+        const lineStrings = this.getElementsByLocalName(doc, 'LineString');
+        
+        const SIMULATED_SPEED_KMH = 10.0; // 模拟速度 10 km/h
+        const MPS = SIMULATED_SPEED_KMH / 3.6; // 米/秒
+
+        let totalDistance = 0;
+        let prevPoint = null;
+        // 使用当前时间作为模拟开始时间
+        const startTime = new Date(); 
+
+        lineStrings.forEach(ls => {
+            const coordinatesTags = this.getElementsByLocalName(ls, 'coordinates');
+            
+            coordinatesTags.forEach(coordTag => {
+                // 格式: lon,lat,alt lon,lat,alt ... (空格或换行分隔元组，逗号分隔值)
+                const rawText = coordTag.textContent.trim();
+                const tuples = rawText.split(/\s+/);
+
+                tuples.forEach(tuple => {
+                    const parts = tuple.split(',');
+                    if (parts.length < 2) return;
+
+                    const lng = parseFloat(parts[0]);
+                    const lat = parseFloat(parts[1]);
+                    const alt = parts.length > 2 ? parseFloat(parts[2]) : undefined;
+
+                    if (isNaN(lat) || isNaN(lng)) return;
+
+                    // WGS-84 转 GCJ-02
+                    const gcj02 = CoordTransform.wgs84ToGcj02(lng, lat);
+
+                    // 计算距离
+                    let dist = 0;
+                    if (prevPoint) {
+                        dist = this.haversineDistance(prevPoint.wgs84_lat, prevPoint.wgs84_lng, lat, lng);
+                        totalDistance += dist;
+                    }
+
+                    // 模拟时间: 距离 / 速度
+                    // 累计时间 = 总距离 / 速度
+                    const elapsed_time = totalDistance / MPS;
+                    const timestamp = new Date(startTime.getTime() + elapsed_time * 1000);
+
+                    const point = {
+                        index: points.length,
+                        lat: gcj02.lat,
+                        lng: gcj02.lng,
+                        wgs84_lat: lat,
+                        wgs84_lng: lng,
+                        timestamp,
+                        elapsed_time,
+                        speed: SIMULATED_SPEED_KMH, // 恒定速度
+                        altitude: alt,
+                        distance: totalDistance / 1000,
+                    };
+
+                    points.push(point);
+                    prevPoint = point;
+                });
+            });
+        });
+
+        return points;
+    }
+
+    // 辅助：忽略命名空间获取元素
+    getElementsByLocalName(parent, localName) {
+        const result = [];
+        const elements = parent.getElementsByTagName('*');
+        const target = localName.toLowerCase();
+        for (let i = 0; i < elements.length; i++) {
+            // 兼容 localName (标准) 和 baseName (IE古老属性) 或 nodeName
+            const elName = elements[i].localName || elements[i].nodeName.split(':').pop();
+            if (elName.toLowerCase() === target) {
+                result.push(elements[i]);
+            }
+        }
+        return result;
+    }
+
+    haversineDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    createIndexedPoints(points, totalSeconds) {
+        if (points.length === 0) return [];
+        const indexed = [];
+        let pointIndex = 0;
+        for (let second = 0; second <= totalSeconds; second++) {
+            while (pointIndex < points.length - 1 &&
+                points[pointIndex + 1].elapsed_time <= second) {
+                pointIndex++;
+            }
+            indexed[second] = points[pointIndex];
+        }
+        return indexed;
+    }
+}
+
+// ========================================
 // Map Renderer - 地图渲染器 (高德地图) - 多用户支持
 // ========================================
 class MapRenderer {
@@ -2794,6 +3053,7 @@ class App {
         this.fitParser = new FitParser();
         this.tcxParser = new TcxParser();
         this.gpxParser = new GpxParser();
+        this.kmlParser = new KmlParser();
         this.mapRenderer = new MapRenderer('map');
         this.dataPanel = new DataPanel();
         this.chartManager = new ChartManager();
@@ -2985,6 +3245,8 @@ class App {
                         parsedData = await this.gpxParser.parse(arrayBuffer);
                     } else if (ext === 'fit') {
                         parsedData = await this.fitParser.parse(arrayBuffer);
+                    } else if (ext === 'kml') {
+                        parsedData = await this.kmlParser.parse(arrayBuffer);
                     } else {
                         throw new Error(`不支持的文件格式: .${ext}`);
                     }
