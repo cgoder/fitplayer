@@ -1324,7 +1324,7 @@ class MapRenderer {
             const marker = new AMap.Marker({
                 position: path[0],
                 content: this.createAvatarContent(index, style),
-                offset: new AMap.Pixel(-18, -40), // 调整偏移以适应上方徽章
+                offset: new AMap.Pixel(-18, -18), // 修正偏移：(-18, -18) 对应 36x36 头像的中心
                 zIndex: 100 + index,
             });
             this.map.add(marker);

@@ -1278,6 +1278,17 @@ body {
 /* ========================================
    Avatar Overlay - Combined Badge Design
    ======================================== */
+.avatar-marker-container {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    display: block;
+}
+
+.avatar-marker-container .avatar-svg {
+    display: block;
+}
+
 /* 单个组合徽章 - 包含心率和配速 */
 .avatar-marker-container .stat-badge {
     position: absolute;
